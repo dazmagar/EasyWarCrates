@@ -158,18 +158,21 @@ function Scanner.Narrate(now)
         local fit = tr.track:Fit()
         local state, line
         if not fit then
-            -- Only while the count is climbing. A track whose samples are
-            -- ageing out of the window counts back down again, and narrating
-            -- "4, 3, 2, 1" on the way to a death that has already been decided
-            -- is not information.
+            -- The waiting line belongs to acquiring a track, said once per
+            -- count on the way up and never after the track has fitted even
+            -- once. Samples age out of the window and arrive again, so the
+            -- count oscillates across the threshold for the whole flight: a
+            -- live transport otherwise alternates COMMIT with "not enough
+            -- samples" every few seconds, which was half the log.
             local n = tr.track:Count()
-            if n >= (tr.peak or 0) then
+            if not tr.everFit and n >= (tr.peak or 0) then
                 tr.peak = n
                 state = "wait:" .. n
                 line = ("|cff777777tracking|r %d sample%s, not enough to fit yet"):format(
                     n, n == 1 and "" or "s")
             end
         else
+            tr.everFit = true
             local r = ns.Predict.Evaluate(ns.GetDropPoints(tr.zoneID), fit)
             local where = r.best and ("%.1f,%.1f"):format(r.best.spot.x * 100, r.best.spot.y * 100) or "-"
             state = ("%d:%s:%s"):format(fit.n, r.ok and "ok" or tostring(r.reason), where)
