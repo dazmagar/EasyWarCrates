@@ -146,9 +146,18 @@ local function refresh()
     local now = GetServerTime()
     local list, nextRow = ns.Model.BuildRows(ns.db.crates, ns.db.route, now)
 
+    -- Shown only when there is something to say. It used to read "no
+    -- transport in the air" the rest of the time, which is the normal state
+    -- and tells nobody anything -- and the rows carry the same news now, with
+    -- the zone attached. What this still adds is the coordinates and how sure
+    -- the call is, so it stays for that and gets out of the way otherwise.
     local head = ns.Model.Headline(ns.Zones.Normalize(C_Map.GetBestMapForUnit("player")), now)
-    frame.head:SetText(head and ((head.ready and "|cffffd100" or "|cff777777") .. head.text .. "|r")
-        or "|cff777777no transport in the air|r")
+    if head then
+        frame.head:SetText(((head.ready and "|cffffd100" or "|cff777777") .. head.text .. "|r"))
+        frame.head:Show()
+    else
+        frame.head:Hide()
+    end
 
     local shown = math.min(#list, MAX_ROWS)
     for i = 1, MAX_ROWS do
@@ -168,7 +177,13 @@ local function refresh()
 
     -- No route means no leave column, so the header should not claim one.
     frame.headRight:SetText((ns.db.route and #ns.db.route > 0) and "drop    leave" or "drop")
-    frame:SetHeight(58 + math.max(shown, 3) * (ROW_H + ROW_GAP) + PAD)
+
+    -- The headline only takes room when it has something in it.
+    local headRoom = head and 16 or 0
+    frame.header:SetPoint("TOPLEFT", PAD, -(24 + headRoom))
+    frame.header:SetPoint("TOPRIGHT", -PAD, -(24 + headRoom))
+    frame.body:SetPoint("TOPLEFT", 0, -(40 + headRoom))
+    frame:SetHeight(44 + headRoom + math.max(shown, 3) * (ROW_H + ROW_GAP) + PAD)
 end
 ns.RefreshWindow = refresh
 
@@ -203,13 +218,13 @@ local function build()
     close:SetScript("OnClick", function() ns.ToggleWindow(false) end)
 
     frame.head = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    frame.head:SetPoint("TOPLEFT", PAD, -24)
-    frame.head:SetPoint("TOPRIGHT", -PAD, -24)
+    frame.head:SetPoint("TOPLEFT", PAD, -22)
+    frame.head:SetPoint("TOPRIGHT", -PAD, -22)
     frame.head:SetJustifyH("LEFT")
 
     frame.header = CreateFrame("Frame", nil, frame)
-    frame.header:SetPoint("TOPLEFT", PAD, -38)
-    frame.header:SetPoint("TOPRIGHT", -PAD, -38)
+    frame.header:SetPoint("TOPLEFT", PAD, -24)
+    frame.header:SetPoint("TOPRIGHT", -PAD, -24)
     frame.header:SetHeight(12)
     local hl = frame.header:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hl:SetPoint("LEFT", 4, 0)
@@ -219,7 +234,7 @@ local function build()
     frame.headRight:SetText("drop    leave")
 
     frame.body = CreateFrame("Frame", nil, frame)
-    frame.body:SetPoint("TOPLEFT", 0, -54)
+    frame.body:SetPoint("TOPLEFT", 0, -40)
     frame.body:SetPoint("BOTTOMRIGHT", 0, PAD)
 
     frame.empty = frame.body:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
