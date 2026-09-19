@@ -165,7 +165,17 @@ end
 
 -- The two legs of a crate's flight, and what is known about each.
 HANDLERS.airtime = function(rest)
-    if tostring(rest or ""):lower():match("^reset") then
+    local reset = tostring(rest or ""):lower():match("^reset%s*(.*)$")
+    if reset then
+        -- Scoped by zone, because one bad reading should not cost the other
+        -- five zones their history.
+        if reset ~= "" then
+            local zoneID = ns.ResolveZoneInput(reset)
+            if not zoneID then return ns.Print(("no zone called '%s'"):format(reset)) end
+            ns.db.descent[zoneID] = nil
+            return ns.Print(("parachute measurements cleared for %s."):format(
+                ns.GetZoneName(zoneID)))
+        end
         ns.db.descent = {}
         ns.db.release = {}
         return ns.Print("parachute and release measurements cleared.")
@@ -515,7 +525,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc timers   -- tracked crate timers")
     ns.Print("  /ewc interval -- measured gaps; 'reset' clears them")
     ns.Print("  /ewc offsets  -- whether the zones' cycles sit at a fixed offset")
-    ns.Print("  /ewc airtime  -- measured parachute times; 'reset' clears them")
+    ns.Print("  /ewc airtime  -- measured parachute times; 'reset [ZONE]' clears them")
     ns.Print("  /ewc shard    -- cross-check the shard number against a creature GUID")
     ns.Print("  /ewc watch    -- toggle the live readout while a transport is tracked")
     ns.Print("  /ewc waypoint -- toggle the map pin on a prediction")

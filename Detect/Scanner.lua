@@ -405,12 +405,25 @@ function Scanner.OnVignettesUpdated()
                     startPolling()
                     Scanner.Evaluate(zoneID, tr)
                 else
-                    -- Whether we were watching the transport that dropped
-                    -- this, captured before the track is torn down. A descent
+                    -- Whether we watched the transport ARRIVE at its drop
+                    -- point, captured before the track is torn down. A descent
                     -- timed from a parachute we only joined partway through is
                     -- a lower bound, not a measurement, and averaging it with
                     -- real ones drags the figure down.
-                    local sawItDrop = tracks[zoneID] ~= nil
+                    --
+                    -- The test used to be "is a track open in this zone",
+                    -- which is not the same thing and let a 19-second reading
+                    -- into Harandar's mean against a true 86. A transport
+                    -- keeps circling after it drops, so someone flying into a
+                    -- zone mid-fall sees it, opens a fresh track, and their
+                    -- fragment of a fall counts as a whole one. The guard that
+                    -- suppresses those tracks keys off recentDrop, which is
+                    -- only set once a crate has been seen -- so on the first
+                    -- sweep after entering a zone it comes down to whether the
+                    -- transport's vignette happens to be listed before the
+                    -- crate's, which is why it did not happen every time.
+                    local watching = tracks[zoneID]
+                    local sawItDrop = watching ~= nil and watching.arrived or nil
 
                     -- The crate is down, or on its way down. Its own position
                     -- is the answer, so every guess about this zone is now
