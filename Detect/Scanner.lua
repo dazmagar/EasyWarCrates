@@ -270,10 +270,11 @@ function Scanner.Narrate(now)
                 tr.arrived and "|cff77dd77ARRIVED|r" or "|cff33ff99COMMIT|r", where)
         else
             local r = ns.Predict.Evaluate(ns.GetDropPoints(tr.zoneID), fit)
-            local where = r.best and ("%.1f,%.1f"):format(r.best.spot.x * 100, r.best.spot.y * 100) or "-"
+            local c = r.aim or r.best
+            local where = c and ("%.1f,%.1f"):format(c.spot.x * 100, c.spot.y * 100) or "-"
             state = ("%d:%s:%s"):format(fit.n, r.ok and "ok" or tostring(r.reason), where)
-            line = ("|cff777777n=%d span=%.1fs err=%.2fdeg|r  %s -> %s"):format(
-                fit.n, fit.span, math.deg(fit.err),
+            line = ("|cff777777n=%d span=%.1fs err=%.2fdeg p=%d%%|r  %s -> %s"):format(
+                fit.n, fit.span, math.deg(fit.err), math.floor((r.p or 0) * 100 + 0.5),
                 r.ok and "|cff33ff99COMMIT|r" or ("|cffff8800" .. tostring(r.reason) .. "|r"),
                 where)
         end
@@ -333,7 +334,7 @@ function Scanner.Prediction(zoneID)
     local fit, why = tr.track:Fit()
     local r = fit and ns.Predict.Evaluate(ns.GetDropPoints(zoneID), fit)
         or { ok = false, reason = why == "still" and "not-moving" or "gathering" }
-    r.fit, r.committed, r.arrived = fit, tr.committed, tr.arrived
+    r.fit, r.committed, r.arrived, r.aimed = fit, tr.committed, tr.arrived, tr.aim
     r.samples = tr.track:Count()
     return r
 end
@@ -508,12 +509,23 @@ function Scanner.Evaluate(zoneID, tr)
         return
     end
 
+    -- A leader that is not yet firm is still the best answer there is, and
+    -- holding it back is expensive. A Zul'Aman flight had the correct spot in
+    -- first place from its fifth sample and said nothing for 62 seconds,
+    -- because the only thing that ever separated it from a rival 7% short on
+    -- the same line was the transport physically flying past that rival --
+    -- twenty seconds before the drop. The answer is given as soon as there is
+    -- one, redrawn if the evidence moves it, and settled when it goes firm.
     local result = ns.Predict.Evaluate(ns.GetDropPoints(zoneID), fit)
-    if not result.ok then return end
+    if not result.leading then return end
 
-    local spot = result.best.spot
-    tr.committed = { x = spot.x, y = spot.y }
-    ns.OnPrediction(zoneID, result, fit)
+    local spot = result.aim.spot
+    local moved = not (tr.aim and tr.aim.x == spot.x and tr.aim.y == spot.y)
+    if result.ok then tr.committed = { x = spot.x, y = spot.y } end
+    if moved or result.ok then
+        tr.aim = { x = spot.x, y = spot.y }
+        ns.OnPrediction(zoneID, result, fit)
+    end
 end
 
 local frame = CreateFrame("Frame")

@@ -168,14 +168,19 @@ function Model.Headline(zoneID, now)
     -- a Zul'Aman flight held the correct spot in first place for a full minute
     -- before the margin cleared, and saying nothing for that minute is worse
     -- than saying "probably here, not sure". The waypoint still waits.
-    if r.best then
+    if r.aim then
+        local eta = ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, r.fit, r.aim.spot,
+            nil, now, ns.db and ns.db.release)
         return {
-            text = ("probably %.1f, %.1f -- %s"):format(
-                r.best.spot.x * 100, r.best.spot.y * 100,
-                r.reason == "ambiguous" and "two spots on this heading"
-                or tostring(r.reason)),
+            text = ("probably %.1f, %.1f (%d%%)%s"):format(
+                r.aim.spot.x * 100, r.aim.spot.y * 100,
+                math.floor((r.aim.p or 0) * 100 + 0.5),
+                eta and (", down in " .. ns.FormatClock(eta.toGround)) or ""),
             ready = false,
         }
+    end
+    if r.best then
+        return { text = ("nothing certain -- %s"):format(tostring(r.reason)), ready = false }
     end
     if r.reason == "gathering" then
         return { text = ("transport spotted, reading its heading (%d)"):format(r.samples or 0),

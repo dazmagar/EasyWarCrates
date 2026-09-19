@@ -4,31 +4,50 @@ local ADDON, ns = ...
 --
 -- Pure maths, same as Detect/Heading.lua: tests/ runs it outside the game.
 --
--- Cast a ray from the transport along its measured heading and rank the zone's
--- catalogued spots by how far off that ray they sit. No launch point and no
--- route database: the transport enters a zone from varying map edges, which is
+-- Cast a ray from the transport along its measured heading and ask, of each
+-- catalogued spot, how well it explains that ray. No launch point and no route
+-- database: the transport enters a zone from varying map edges, which is
 -- exactly what breaks an origin-based model (RCT fits one origin per zone and
 -- eight of its twelve land mid-map as a result, which is what a least-squares
 -- fit over several entry edges produces).
 --
--- Ranking is by ANGLE off the ray, never by plain perpendicular distance. A
--- spot sitting 1% of the map off the ray means something very different 5%
--- ahead than 40% ahead, and the verdict must not drift with how far along the
--- flight we happen to be. Angles are compared as tangents (perp/along, with
--- along > 0), which is monotonic in the angle and avoids atan2 -- that call is
--- spelled differently in WoW's Lua 5.1 and in the 5.4+ used by the tests.
+-- A spot is scored by how far it sits from the ray SIDEWAYS, measured in units
+-- of what could plausibly put it there: the crate's landing scatter, plus the
+-- bearing error over that range. Scoring this way rather than by bare angle is
+-- what makes the verdict sharpen as the transport closes in. The angular
+-- version did the opposite -- its tolerance was SCATTER/range, so it grew
+-- without bound at short range -- and in Zul'Aman that produced a full minute
+-- of silence on a call that was already correct, ending only when the
+-- transport physically flew past the rival and knocked it out of the running.
 
 local Predict = {}
 ns.Predict = Predict
 
--- A crate lands this far from its catalogued spot in the worst case. Measured
--- over Wowhead's spawn records: median radius 0.12% of the map, p90 0.61%,
--- max 0.86%. The acceptance cone has to contain it, and since it is a distance
--- rather than an angle it opens the cone wider the closer the target is.
-local SCATTER = 0.010
--- How many sigma of the fit's own heading error to tolerate. The fit reports
--- err honestly, so this is the only knob that says how brave to be.
-local ERR_SIGMA = 2.5
+-- How far a crate lands from its catalogued spot, as a standard deviation in
+-- map fractions. Wowhead's spawn records give a median radius of 0.12% and a
+-- p90 of 0.61%; a Rayleigh fit to that p90 puts sigma near 0.3%. 0.4% is used
+-- because the two fits disagree -- the tail is heavier than Rayleigh -- and
+-- understating this makes every verdict overconfident.
+local SCATTER = 0.004
+
+-- Floor under the fit's own reported heading error, in radians. The regression
+-- routinely reports 0.00 degrees because a transport flies a dead-straight
+-- line, and taken at face value that would have the model trust the bearing
+-- absolutely. It should not: the bearing is read over a 20-second window and
+-- the transport can still turn. 0.004 rad is 0.23 degrees, which is the order
+-- the committed calls actually miss by.
+local ERR_FLOOR = 0.004
+
+-- Sideways distance, in sigma, beyond which a spot cannot explain the ray.
+local GATE = 3.0
+-- Share of the posterior at which the call is firm.
+local FIRM = 0.90
+-- A spot this plausible relative to the leader is still in contention.
+local CONTEND = 0.20
+-- Contenders spread wider than this across the ray are not one line, so the
+-- nearest of them is not on the way to the rest and picking it is a guess.
+local CORRIDOR = 0.04
+
 -- Once the transport is this close to a spot and sitting on the ray, it has
 -- arrived: that spot is the answer by proximity, and no bearing test applies.
 --
@@ -40,16 +59,7 @@ local ERR_SIGMA = 2.5
 -- the addon committed confidently to a point 7.2% of the map from where the
 -- crate landed. A prediction that gets worse as it gets closer is worse than
 -- no prediction.
---
--- It is also where the angular test stops meaning anything: the cone below is
--- SCATTER/along, which blows up as along goes to zero, so at close range
--- everything is "within cone" and no margin is ever enough.
 local ARRIVAL = 0.05
--- Required separation between the best and second spot, as a multiple of the
--- uncertainty at that range. Roughly one in six geometries puts two spots on
--- the same line from a given entry edge, and no amount of flying separates
--- those: this is what makes the addon stay quiet instead of guessing.
-local MARGIN = 1.0
 
 local function candidates(spots, px, py, hx, hy)
     local out = {}
@@ -63,10 +73,6 @@ local function candidates(spots, px, py, hx, hy)
             out[#out + 1] = { spot = s, along = along, perp = perp, tan = perp / along }
         end
     end
-    -- Angle decides. On a tie the nearer spot wins: two spots exactly on the
-    -- bearing are indistinguishable by angle, and the transport reaches the
-    -- near one first. Without this the order of equals is whatever table.sort
-    -- happens to do, which is not something a waypoint should rest on.
     table.sort(out, function(a, b)
         if a.tan == b.tan then return a.along < b.along end
         return a.tan < b.tan
@@ -76,7 +82,15 @@ end
 Predict.Candidates = candidates
 
 -- spots: from ns.GetDropPoints(mapID). fit: from a Heading track.
--- Always returns a table. Read .ok before acting; .reason says why not.
+-- Always returns a table. Read .ok and .leading before acting.
+--
+--   best        highest posterior
+--   aim         the spot to actually fly to, and the one to pin
+--   p           posterior of best, 0..1
+--   contenders  spots not ruled out, nearest first
+--   ok          the call is firm
+--   leading     aim is worth acting on now, though it may still change
+--   reason      why not firm: off-ray | ambiguous | spread
 function Predict.Evaluate(spots, fit)
     if type(spots) ~= "table" or #spots == 0 then
         return { ok = false, reason = "no-catalogue" }
@@ -90,42 +104,85 @@ function Predict.Evaluate(spots, fit)
         return { ok = false, reason = "nothing-ahead" }
     end
 
-    local best, second = ranked[1], ranked[2]
-    -- Uncertainty in the same tangent units the ranking uses: the landing
-    -- scatter seen from this range, plus the fit's own heading error.
-    local cone = SCATTER / best.along + ERR_SIGMA * (fit.err or 0)
+    local err = fit.err or 0
+    if err < ERR_FLOOR then err = ERR_FLOOR end
 
+    -- Sideways offset in sigma, and the likelihood that follows from it.
+    local total = 0
+    for i = 1, #ranked do
+        local c = ranked[i]
+        local sigma = math.sqrt(SCATTER * SCATTER + (c.along * err) ^ 2)
+        c.z = c.perp / sigma
+        c.like = math.exp(-0.5 * c.z * c.z)
+        total = total + c.like
+    end
+    for i = 1, #ranked do ranked[i].p = ranked[i].like / total end
+
+    table.sort(ranked, function(a, b)
+        if a.like == b.like then return a.along < b.along end
+        return a.like > b.like
+    end)
+
+    local best, second = ranked[1], ranked[2]
     local result = {
-        best    = best,
-        second  = second,
-        ranked  = ranked,
-        cone    = cone,
-        margin  = second and (second.tan - best.tan) or math.huge,
-        angle   = math.atan(best.tan),
+        best   = best,
+        second = second,
+        ranked = ranked,
+        p      = best.p,
+        angle  = math.atan(best.tan),
     }
 
-    -- Arrival, tested before anything angular and by distance alone. The
+    -- Arrival, tested before anything else and by distance alone. The
     -- transport is on top of this spot; that is the answer regardless of what
     -- else shares its bearing further out.
-    if best.along <= ARRIVAL and best.perp <= SCATTER then
-        result.ok, result.arriving = true, true
+    if best.along <= ARRIVAL and best.perp <= SCATTER * GATE then
+        result.aim, result.ok, result.leading, result.arriving = best, true, true, true
         return result
     end
 
-    if best.tan > cone then
-        result.ok, result.reason = false, "off-ray"
-        return result
-    end
-    if second and result.margin < MARGIN * cone then
-        result.ok, result.reason = false, "ambiguous"
+    if best.z > GATE then
+        result.reason = "off-ray"
         return result
     end
 
-    result.ok = true
+    -- Everything still in the running, in the order the transport reaches it.
+    local contenders, spread = {}, 0
+    for i = 1, #ranked do
+        local c = ranked[i]
+        if c.like >= CONTEND * best.like then
+            contenders[#contenders + 1] = c
+            if c.perp > spread then spread = c.perp end
+        end
+    end
+    table.sort(contenders, function(a, b) return a.along < b.along end)
+    result.contenders, result.spread = contenders, spread
+
+    -- Fly to the nearest contender, not the highest-scoring one. When several
+    -- spots sit on one line the transport passes them in order, so the near
+    -- one is on the way to the far one and going there costs nothing if it
+    -- turns out to be wrong. Two Zul'Aman spots 7% apart lie so exactly on the
+    -- same line that their perpendicular offsets differ by 0.001% of the map;
+    -- no bearing will ever separate them, and answering "the near one, and if
+    -- not, straight on" is worth far more than answering nothing.
+    result.aim = contenders[1]
+
+    if best.p >= FIRM then
+        result.ok, result.leading = true, true
+        return result
+    end
+    if spread > CORRIDOR then
+        -- A fan, not a line. The nearest is not on the way to the rest.
+        result.reason = "spread"
+        return result
+    end
+    result.leading, result.reason = true, "ambiguous"
     return result
 end
 
 Predict.SCATTER   = SCATTER
-Predict.ERR_SIGMA = ERR_SIGMA
+Predict.ERR_FLOOR = ERR_FLOOR
+Predict.GATE      = GATE
+Predict.FIRM      = FIRM
+Predict.CONTEND   = CONTEND
+Predict.CORRIDOR  = CORRIDOR
 Predict.ARRIVAL   = ARRIVAL
-Predict.MARGIN    = MARGIN

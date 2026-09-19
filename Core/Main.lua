@@ -187,9 +187,10 @@ function ns.SetCratePin(zoneID, x, y)
     return false
 end
 
--- Called when a transport's heading has settled on one spot.
+-- Called when there is a spot worth flying to, firm or not.
 function ns.OnPrediction(zoneID, result, fit)
-    local s = result.best.spot
+    local s = result.aim.spot
+    local firm = result.ok
     ns.lastPrediction[zoneID] = { x = s.x, y = s.y, at = GetServerTime() }
     local eta = ns.Airtime.ETA(ns.db.descent, zoneID, fit, s, nil, GetServerTime(), ns.db.release)
     -- The RAW figure is remembered, because that is what the next measurement
@@ -202,10 +203,26 @@ function ns.OnPrediction(zoneID, result, fit)
             ns.FormatClock(eta.toGround):gsub("^%s+", ""),
             eta.descentN == 0 and " |cff777777(descent not measured here yet)|r" or "")
     end
+
+    -- An unfirm call names what else is on the line, because that is the whole
+    -- reason it is safe to act on early: the runners-up are further along the
+    -- same heading, so flying at this one is flying at them too.
+    local rest = ""
+    if not firm and result.contenders and #result.contenders > 1 then
+        local others = {}
+        for i = 2, #result.contenders do
+            local o = result.contenders[i].spot
+            others[#others + 1] = ("%.1f,%.1f"):format(o.x * 100, o.y * 100)
+        end
+        rest = ("  |cff777777then %s on the same line|r"):format(table.concat(others, ", "))
+    end
+
     ns.Print(string.format(
-        "incoming to |cffffd100%.1f, %.1f|r in %s%s  |cff777777(%.1f deg off, %d samples)|r",
-        s.x * 100, s.y * 100, ns.GetZoneName(zoneID), when,
-        math.deg(math.atan(result.best.tan)), fit.n))
+        "%s |cffffd100%.1f, %.1f|r in %s%s  |cff777777(%d%% sure, %.1f deg off, %d samples)|r%s",
+        firm and "incoming to" or "probably", s.x * 100, s.y * 100,
+        ns.GetZoneName(zoneID), when,
+        math.floor((result.aim.p or 0) * 100 + 0.5),
+        math.deg(math.atan(result.aim.tan)), fit.n, rest))
 
     if not ns.db.waypoint then
         ns.Print("  |cff777777no map pin: turned off in settings|r")

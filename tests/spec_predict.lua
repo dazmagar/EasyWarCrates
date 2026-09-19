@@ -183,3 +183,53 @@ t.test("ranking is exposed in order for the UI to show runners-up", function()
     t.ok(r.ranked[1].tan <= r.ranked[2].tan)
     t.ok(r.ranked[2].tan <= r.ranked[3].tan)
 end)
+
+-- The defect this model replaced. The old tolerance was SCATTER/range, so it
+-- grew without bound as the transport closed in and the verdict got LESS
+-- decided the nearer it got. Same two spots, same bearing, transport further
+-- along: it must not become less sure.
+t.test("closing in on a spot cannot make the call less certain", function()
+    local s = spots({ 0.5, 0.5 }, { 0.9, 0.53 })
+    local far  = Predict.Evaluate(s, fit(0.05, 0.5, 1, 0))
+    local near = Predict.Evaluate(s, fit(0.42, 0.5, 1, 0))
+    t.ok(far.ok, "committed at range")
+    t.ok(near.ok, "and must still be committed four fifths of the way there: "
+        .. tostring(near.reason))
+    t.ok(near.p >= far.p, string.format(
+        "confidence went %.3f -> %.3f as it approached", far.p, near.p))
+end)
+
+-- Two spots on one line cannot be separated by bearing, ever. Answering
+-- nothing costs the whole flight; answering "the near one, and if not,
+-- straight on past it" costs the 10% of map between them.
+t.test("spots on one line aim at the nearer, without claiming to be sure", function()
+    local s = spots({ 0.5, 0.5 }, { 0.6, 0.5 })
+    local r = Predict.Evaluate(s, fit(0.1, 0.5, 1, 0))
+    t.notOk(r.ok, "a genuine tie is not a firm call")
+    t.ok(r.leading, "but it is still worth flying at")
+    t.eq(r.aim.spot, s[1], "the near one: the far one is beyond it on the same line")
+    t.eq(#r.contenders, 2, "and the other is named, not hidden")
+    t.near(r.p, 0.5, 1e-9, "a tie is reported as a tie")
+end)
+
+-- The Zul'Aman pair that produced 62 seconds of silence on a correct call.
+-- Their offsets from a ray entering the zone from the north differ by 0.001%
+-- of the map, so no further flying separates them.
+t.test("the Zul'Aman pair is answered early rather than waited out", function()
+    local near, far = { 0.469, 0.623 }, { 0.489, 0.692 }
+    local hx, hy = 0.2785, 0.9605                -- entry from the north
+    local r = Predict.Evaluate(spots(near, far),
+        fit(0.489 - 0.55 * hx, 0.692 - 0.55 * hy, hx, hy))
+    t.ok(r.leading, "at 55% of the map out there is already an answer to give")
+    t.eq(r.aim.spot.x, near[1], "and it is the near one")
+end)
+
+-- The other half of that trade: spots to either side of a sloppy bearing are
+-- not one line, so the nearest is not on the way to the rest and naming it
+-- would be a guess dressed up as an answer.
+t.test("candidates fanned across the ray produce no aim at all", function()
+    local r = Predict.Evaluate(spots({ 0.9, 0.55 }, { 0.9, 0.45 }), fit(0.1, 0.5, 1, 0, 0.05))
+    t.notOk(r.ok)
+    t.notOk(r.leading, "one on each side: flying at either is a coin toss")
+    t.eq(r.reason, "spread")
+end)
