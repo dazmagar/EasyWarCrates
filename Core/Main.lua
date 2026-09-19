@@ -12,6 +12,7 @@ local DEFAULTS = {
     gaps      = nil,    -- observed intervals between drops
     travel    = nil,    -- per-zone capital-to-zone overrides
     route     = nil,    -- the rotation, as zone ids in order
+    descent   = nil,    -- measured parachute times, per zone
 }
 
 local PREFIX = "|cff33ddaa[EWC]|r "
@@ -39,6 +40,7 @@ local function applyDefaults(db)
     db.gaps    = db.gaps or {}
     db.travel  = db.travel or {}
     db.route   = db.route or {}
+    db.descent = db.descent or {}
     return db
 end
 
@@ -95,6 +97,18 @@ function ns.OnTransportArrived(zoneID, spot)
         spot.x * 100, spot.y * 100, ns.GetZoneName(zoneID)))
 end
 
+-- A parachute timed from release to landing. The one leg of the flight that
+-- cannot be computed and has to be measured.
+function ns.OnDescentMeasured(zoneID, seconds)
+    local mean, n, lo, hi = ns.Airtime.Descent(ns.db.descent, zoneID)
+    ns.Print(("|cff33ff99descent measured|r in %s: |cffffd100%ds|r under the parachute"):format(
+        ns.GetZoneName(zoneID), math.floor(seconds + 0.5)))
+    if n > 1 then
+        ns.Print(("  %d measured here: mean %ds, range %d-%d"):format(
+            n, math.floor(mean + 0.5), math.floor(lo + 0.5), math.floor(hi + 0.5)))
+    end
+end
+
 -- Two drops seen in the same zone and shard. The gap between them is the only
 -- direct measurement of the respawn interval anyone gets, and the three addons
 -- that ship a figure disagree about it, so it is worth saying out loud.
@@ -115,10 +129,17 @@ end
 function ns.OnPrediction(zoneID, result, fit)
     local s = result.best.spot
     ns.lastPrediction[zoneID] = { x = s.x, y = s.y, at = GetServerTime() }
+    local eta = ns.Airtime.ETA(ns.db.descent, zoneID, fit, s, nil, GetServerTime())
+    local when = ""
+    if eta then
+        when = (", |cffffd100on the ground in %s|r%s"):format(
+            ns.FormatClock(eta.toGround):gsub("^%s+", ""),
+            eta.descentN == 0 and " |cff777777(descent not measured here yet)|r" or "")
+    end
     ns.Print(string.format(
-        "incoming to |cffffd100%.1f, %.1f|r in %s  |cff777777(%.1f deg off, %d samples, err %.2f deg)|r",
-        s.x * 100, s.y * 100, ns.GetZoneName(zoneID),
-        math.deg(math.atan(result.best.tan)), fit.n, math.deg(fit.err)))
+        "incoming to |cffffd100%.1f, %.1f|r in %s%s  |cff777777(%.1f deg off, %d samples)|r",
+        s.x * 100, s.y * 100, ns.GetZoneName(zoneID), when,
+        math.deg(math.atan(result.best.tan)), fit.n))
 
     if ns.db.waypoint and C_Map.CanSetUserWaypoint(zoneID) then
         C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(zoneID, s.x, s.y))

@@ -28,6 +28,7 @@ ADDON_FILES = [
     "Track/Timers.lua",
     "Track/Learn.lua",
     "Track/Route.lua",
+    "Track/Airtime.lua",
 ]
 
 # Create frames and register events at load, so they only run in game.

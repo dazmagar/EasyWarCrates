@@ -45,6 +45,12 @@ local SPOTTED_COOLDOWN = 180
 local recentDrop = {}
 local DROP_COOLDOWN = 120
 
+-- When the parachute was first seen in a zone. The descent can only be
+-- measured as the gap from this to the crate being on the ground, and it is
+-- also what the countdown runs off once the crate is falling.
+local fallingSince = {}
+Scanner.FallingSince = function(zoneID) return fallingSince[zoneID] end
+
 local TRACK_STALE = 60  -- seconds a track may go unseen before it is dropped
 
 -- VIGNETTES_UPDATED alone is not enough to fly a heading off: it fires when the
@@ -106,6 +112,7 @@ function Scanner.Reset()
     tracks = {}
     spotted = {}
     recentDrop = {}
+    fallingSince = {}
     stopPolling()
 end
 
@@ -313,6 +320,21 @@ function Scanner.OnVignettesUpdated()
                     -- with nothing left to carry.
                     Scanner.EndTracks(zoneID)
                     recentDrop[zoneID] = tNow
+                    -- The two parachute stages, before anything is recorded:
+                    -- the descent is the gap between them, and it is the only
+                    -- way to know how long a crate takes to come down.
+                    if stage == "falling" then
+                        fallingSince[zoneID] = fallingSince[zoneID] or stamp
+                    elseif stage == "ground" and fallingSince[zoneID] then
+                        local secs = stamp - fallingSince[zoneID]
+                        fallingSince[zoneID] = nil
+                        if ns.Airtime.NoteDescent(db.descent, zoneID, secs) then
+                            ns.OnDescentMeasured(zoneID, secs)
+                        end
+                    elseif stage == "claimed" then
+                        fallingSince[zoneID] = nil
+                    end
+
                     if not shard then
                         ns.Debug("crate seen but its GUID carried no shard; not recorded")
                     else

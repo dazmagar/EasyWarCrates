@@ -1,0 +1,110 @@
+local ns, t = ...
+local Airtime = ns.Airtime
+
+local ZONE = 2444
+local T0 = 1000000
+
+-- Roughly what a transport does: a bit under 1% of the map per second.
+local function fit(x, y, hx, hy, speed)
+    return { x = x, y = y, hx = hx, hy = hy, speed = speed or 0.007 }
+end
+
+-- The leg that needs no learning. RCT will not give a number for this until it
+-- has timed four crates at that exact drop point; the speed is already in the
+-- heading fit, so it is a division and works on the first flight in a zone
+-- nobody has visited.
+t.test("time to release is computed, not learned", function()
+    local secs = Airtime.ToRelease(fit(0.20, 0.50, 1, 0), { x = 0.55, y = 0.50 })
+    t.near(secs, 0.35 / 0.007, 1e-6, "35% of map at 0.7% per second")
+end)
+
+t.test("only the distance along the heading counts", function()
+    -- Target off to one side: the sideways part is not flown towards.
+    local secs = Airtime.ToRelease(fit(0.20, 0.50, 1, 0), { x = 0.55, y = 0.70 })
+    t.near(secs, 0.35 / 0.007, 1e-6)
+end)
+
+t.test("a transport past its target is treated as at it, never negative", function()
+    t.eq(Airtime.ToRelease(fit(0.60, 0.50, 1, 0), { x = 0.40, y = 0.50 }), 0)
+end)
+
+t.test("a fit with no speed yields nothing rather than dividing by zero", function()
+    t.eq(Airtime.ToRelease(fit(0.2, 0.5, 1, 0, 0), { x = 0.5, y = 0.5 }), nil)
+    t.eq(Airtime.ToRelease(nil, { x = 0.5, y = 0.5 }), nil)
+    t.eq(Airtime.ToRelease(fit(0.2, 0.5, 1, 0), nil), nil)
+end)
+
+t.test("an unmeasured zone falls back to a guess and says so", function()
+    local mean, n = Airtime.Descent({}, ZONE)
+    t.eq(mean, Airtime.DESCENT_GUESS)
+    t.eq(n, 0, "zero samples is what tells the UI not to present this as measured")
+end)
+
+t.test("measured descents replace the guess", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 95)
+    Airtime.NoteDescent(store, ZONE, 105)
+    local mean, n, lo, hi = Airtime.Descent(store, ZONE)
+    t.near(mean, 100, 1e-9)
+    t.eq(n, 2)
+    t.eq(lo, 95)
+    t.eq(hi, 105)
+end)
+
+t.test("an implausible descent is refused", function()
+    local store = {}
+    t.eq(Airtime.NoteDescent(store, ZONE, 2), nil, "two seconds is not a parachute")
+    t.eq(Airtime.NoteDescent(store, ZONE, 900), nil)
+    t.eq(Airtime.NoteDescent(store, ZONE, nil), nil)
+    t.eq(Airtime.NoteDescent(nil, ZONE, 100), nil)
+    t.eq(next(store), nil)
+end)
+
+-- A drop was observed falling for about a minute and a half to two minutes,
+-- which is the range these bounds have to admit.
+t.test("the observed range of real descents is accepted", function()
+    local store = {}
+    t.ok(Airtime.NoteDescent(store, ZONE, 90))
+    t.ok(Airtime.NoteDescent(store, ZONE, 120))
+    t.eq(select(2, Airtime.Descent(store, ZONE)), 2)
+end)
+
+t.test("an inbound crate reports both legs", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 100)
+    local eta = Airtime.ETA(store, ZONE, fit(0.20, 0.50, 1, 0), { x = 0.55, y = 0.50 }, nil, T0)
+    t.eq(eta.phase, "inbound")
+    t.near(eta.toRelease, 50, 1e-6)
+    t.near(eta.toGround, 150, 1e-6, "release plus the measured descent")
+    t.eq(eta.descentN, 1)
+end)
+
+t.test("once falling, the release leg is done and only the descent remains", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 100)
+    local eta = Airtime.ETA(store, ZONE, nil, nil, T0 - 40, T0)
+    t.eq(eta.phase, "falling")
+    t.eq(eta.toRelease, nil, "it has already been released")
+    t.near(eta.toGround, 60, 1e-9)
+end)
+
+-- What the player sees as "on the ground any second": the estimate has run out
+-- but the game has not confirmed the landing. Saying nothing would read as the
+-- addon having lost track of it.
+t.test("an overrun descent reports down rather than a negative countdown", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 100)
+    local eta = Airtime.ETA(store, ZONE, nil, nil, T0 - 130, T0)
+    t.eq(eta.phase, "down")
+    t.eq(eta.toGround, 0)
+end)
+
+t.test("an unmeasured zone still gives a figure, flagged as a guess", function()
+    local eta = Airtime.ETA({}, ZONE, fit(0.20, 0.50, 1, 0), { x = 0.55, y = 0.50 }, nil, T0)
+    t.near(eta.toGround, 50 + Airtime.DESCENT_GUESS, 1e-6)
+    t.eq(eta.descentN, 0, "the caller decides how to caveat it, but must be able to")
+end)
+
+t.test("nothing to say yields nil, not an empty shape", function()
+    t.eq(Airtime.ETA({}, ZONE, nil, nil, nil, T0), nil)
+end)

@@ -158,6 +158,28 @@ HANDLERS.predict = function()
     end
 end
 
+-- The two legs of a crate's flight, and what is known about each.
+HANDLERS.airtime = function()
+    ns.Print("time under the parachute, measured per zone:")
+    local any = false
+    for zoneID in pairs(ns.ZONES) do
+        local mean, n, lo, hi = ns.Airtime.Descent(ns.db.descent, zoneID)
+        if n > 0 then
+            any = true
+            ns.Print(("  %-3s %3ds  |cff777777from %d drop%s, range %d-%d|r"):format(
+                ns.GetZoneAbbr(zoneID), math.floor(mean + 0.5), n, n == 1 and "" or "s",
+                math.floor(lo + 0.5), math.floor(hi + 0.5)))
+        else
+            ns.Print(("  %-3s %3ds  |cff777777guess, nothing measured here|r"):format(
+                ns.GetZoneAbbr(zoneID), math.floor(mean + 0.5)))
+        end
+    end
+    if not any then
+        ns.Print("|cff777777measured when a crate is watched from parachute to ground|r")
+    end
+    ns.Print("|cff777777the other leg -- transport to drop point -- is computed from its speed, not learned|r")
+end
+
 HANDLERS.timers = function()
     local now = GetServerTime()
     local list = ns.Timers.Sorted(ns.db.crates, ns.GetZoneInterval, now)
@@ -325,6 +347,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc travel   -- capital-to-zone flight times used by the route")
     ns.Print("  /ewc timers   -- tracked crate timers")
     ns.Print("  /ewc interval -- measured gaps between drops, per zone")
+    ns.Print("  /ewc airtime  -- measured parachute times, per zone")
     ns.Print("  /ewc shard    -- cross-check the shard number against a creature GUID")
     ns.Print("  /ewc watch    -- toggle the live readout while a transport is tracked")
     ns.Print("  /ewc waypoint -- toggle the map pin on a prediction")
