@@ -86,6 +86,15 @@ function ns.OnCrateRecorded(zoneID, shardID, stage, pos)
     end
 end
 
+-- The transport has flown through the spot it was called for. Worth saying:
+-- when the crate's own vignette never turns up -- out of range, or the drop
+-- bugging out as one did in Coiled Isle -- this is the only word the player
+-- gets about where it went.
+function ns.OnTransportArrived(zoneID, spot)
+    ns.Print(("|cff77dd77transport reached|r %.1f, %.1f in %s -- the crate should be there"):format(
+        spot.x * 100, spot.y * 100, ns.GetZoneName(zoneID)))
+end
+
 -- Two drops seen in the same zone and shard. The gap between them is the only
 -- direct measurement of the respawn interval anyone gets, and the three addons
 -- that ship a figure disagree about it, so it is worth saying out loud.

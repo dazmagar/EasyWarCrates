@@ -17,8 +17,6 @@ local function stampClock() return GetServerTime() end
 
 -- Transports currently in the air, by vignette GUID.
 local tracks = {}
--- Last thing we told the player about, so a steady prediction is not repeated.
-local announced = {}
 -- When each zone last had a transport announced, keyed by zone rather than by
 -- track. See the cooldown's use below for why that distinction matters.
 local spotted = {}
@@ -94,7 +92,6 @@ end
 
 function Scanner.Reset()
     tracks = {}
-    announced = {}
     spotted = {}
     recentDrop = {}
     stopPolling()
@@ -104,7 +101,6 @@ local function dropStaleTracks(now)
     for guid, tr in pairs(tracks) do
         if now - (tr.lastSeen or 0) > TRACK_STALE then
             tracks[guid] = nil
-            announced[guid] = nil
         end
     end
 end
@@ -115,7 +111,7 @@ end
 function Scanner.EndTracks(zoneID)
     for guid, tr in pairs(tracks) do
         if tr.zoneID == zoneID then
-            tracks[guid], announced[guid] = nil, nil
+            tracks[guid] = nil
         end
     end
 end
@@ -134,7 +130,7 @@ function Scanner.Poll()
     for guid, tr in pairs(tracks) do
         local info = C_VignetteInfo.GetVignetteInfo(guid)
         if not info or ns.VignetteStage(info.vignetteID) ~= "flying" then
-            tracks[guid], announced[guid] = nil, nil
+            tracks[guid] = nil
         else
             local pos = vignettePosition(guid, tr.zoneID or zoneID, rawMap)
             if pos then
@@ -146,7 +142,7 @@ function Scanner.Poll()
                 -- Nothing readable and nothing left in the window. Waiting out
                 -- TRACK_STALE would only keep an empty track around to be
                 -- narrated at.
-                tracks[guid], announced[guid] = nil, nil
+                tracks[guid] = nil
             end
         end
     end
@@ -182,6 +178,13 @@ function Scanner.Narrate(now)
                 line = ("|cff777777tracking|r %d sample%s, not enough to fit yet"):format(
                     n, n == 1 and "" or "s")
             end
+        elseif tr.committed then
+            -- Settled. Re-running the prediction here would report the plane
+            -- drifting off its own answer once it has flown past.
+            local where = ("%.1f,%.1f"):format(tr.committed.x * 100, tr.committed.y * 100)
+            state = "committed:" .. where .. (tr.arrived and ":arrived" or "")
+            line = ("|cff777777n=%d span=%.1fs|r  %s -> %s"):format(fit.n, fit.span,
+                tr.arrived and "|cff77dd77ARRIVED|r" or "|cff33ff99COMMIT|r", where)
         else
             tr.everFit = true
             local r = ns.Predict.Evaluate(ns.GetDropPoints(tr.zoneID), fit)
@@ -341,16 +344,33 @@ end
 function Scanner.Evaluate(zoneID, tr)
     local fit = tr.track:Fit()
     if not fit then return end
+
+    -- Once a transport has been called, that is the answer. It carries one
+    -- crate and drops it once, so re-reading its heading afterwards is reading
+    -- a plane that has finished its job -- which in Coiled Isle produced a
+    -- confident call on 46.7, 73.8, held for a minute, followed by the tracker
+    -- talking about 57.6, 77.5 the moment it flew past.
+    --
+    -- The only question left is whether it got there, and saying so is worth
+    -- more than it sounds: when the crate's own vignette never appears -- out
+    -- of range, or the drop bugging out as it did there -- this is the only
+    -- word the player gets about where it went.
+    if tr.committed then
+        if not tr.arrived then
+            local dx, dy = tr.committed.x - fit.x, tr.committed.y - fit.y
+            if dx * fit.hx + dy * fit.hy <= 0 then
+                tr.arrived = true
+                ns.OnTransportArrived(zoneID, tr.committed)
+            end
+        end
+        return
+    end
+
     local result = ns.Predict.Evaluate(ns.GetDropPoints(zoneID), fit)
     if not result.ok then return end
 
-    -- Only speak when the answer changes. A steady prediction held for thirty
-    -- seconds is one message, not thirty.
     local spot = result.best.spot
-    local key = string.format("%.4f:%.4f", spot.x, spot.y)
-    if announced[tr.guid] == key then return end
-    announced[tr.guid] = key
-
+    tr.committed = { x = spot.x, y = spot.y }
     ns.OnPrediction(zoneID, result, fit)
 end
 
