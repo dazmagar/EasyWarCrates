@@ -185,3 +185,26 @@ end)
 t.test("nothing to say yields nil, not an empty shape", function()
     t.eq(Airtime.ETA({}, ZONE, nil, nil, nil, T0), nil)
 end)
+
+-- Zul'Aman has produced descents of 83 and 129 seconds where four other zones
+-- sit inside 84 to 87. Elevation is the obvious suspect -- lower ground under
+-- the drop point means a longer fall -- but until each reading carried the
+-- spot it came from, that could be argued and not settled.
+t.test("a descent records where it was measured", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 129, nil, { x = 0.469, y = 0.622 })
+    Airtime.NoteDescent(store, ZONE, 83, nil, { x = 0.398, y = 0.275 })
+    local s = Airtime.DescentSamples(store, ZONE)
+    t.near(s[1].x, 46.9, 1e-9)
+    t.near(s[1].y, 62.2, 1e-9)
+    t.near(s[2].x, 39.8, 1e-9)
+    t.ok(s[1].x ~= s[2].x, "two spots, and now it is visible that they are two")
+end)
+
+t.test("a reading with no position is still kept", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 86)
+    local s = Airtime.DescentSamples(store, ZONE)
+    t.eq(s[1].x, nil, "unknown, not zero -- the readout says so rather than plotting it at 0,0")
+    t.eq(select(2, Airtime.Descent(store, ZONE)), 1, "and it still counts towards the mean")
+end)

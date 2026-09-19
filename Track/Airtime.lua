@@ -76,7 +76,7 @@ Airtime.CONFIDENT_N = CONFIDENT_N
 -- Samples are kept individually rather than folded into a running sum, for the
 -- same reason the interval gaps are: with one reading per zone a mean is not a
 -- measurement, and the spread is the thing worth seeing.
-function Airtime.NoteDescent(store, zoneID, seconds, overlapped)
+function Airtime.NoteDescent(store, zoneID, seconds, overlapped, pos)
     if type(store) ~= "table" or not zoneID then return nil end
     seconds = tonumber(seconds)
     if not seconds or seconds < DESCENT_MIN or seconds > DESCENT_MAX then return nil end
@@ -88,7 +88,18 @@ function Airtime.NoteDescent(store, zoneID, seconds, overlapped)
         list = {}
         store[zoneID] = list
     end
-    list[#list + 1] = { secs = seconds, overlapped = overlapped or nil }
+    -- Where it landed, rounded to a tenth of a percent of the map. Zul'Aman
+    -- has produced descents of 83 and 129 seconds where four other zones sit
+    -- inside 84-87, and elevation is the obvious suspect: lower ground under
+    -- the drop point means a longer fall. Whether that is really it can only
+    -- be answered by knowing which spot each reading came from, and until now
+    -- it was not recorded -- so the question could be argued but not settled.
+    list[#list + 1] = {
+        secs = seconds,
+        overlapped = overlapped or nil,
+        x = pos and math.floor(pos.x * 1000 + 0.5) / 10 or nil,
+        y = pos and math.floor(pos.y * 1000 + 0.5) / 10 or nil,
+    }
     while #list > 40 do table.remove(list, 1) end
     return list[#list]
 end

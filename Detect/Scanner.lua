@@ -223,9 +223,15 @@ function Scanner.Narrate(now)
             -- samples" every few seconds, which was half the log.
             local n = tr.track:Count()
             if why == "still" then
-                state = "still"
-                line = ("|cff777777%d samples, but it has stopped moving -- circling its drop point|r")
-                    :format(n)
+                -- Same condition, opposite meanings. A track that has fitted
+                -- before and stopped covering ground has arrived and is
+                -- circling; one that never has is simply still gathering its
+                -- first few readings, and calling that "circling its drop
+                -- point" two seconds after the plane appears is wrong.
+                state = "still:" .. tostring(tr.everFit)
+                line = tr.everFit
+                    and ("|cff777777%d samples, but it has stopped moving -- circling its drop point|r"):format(n)
+                    or ("|cff777777tracking|r %d samples, not far enough yet to read a heading"):format(n)
             elseif not tr.everFit and n >= (tr.peak or 0) then
                 tr.peak = n
                 state = "wait:" .. n
@@ -405,7 +411,7 @@ function Scanner.OnVignettesUpdated()
                             fallingSince[key] = nil
                             local overlapped = fallingNow[key]
                             if secs <= DESCENT_PAIR_MAX
-                                and ns.Airtime.NoteDescent(db.descent, zoneID, secs, overlapped) then
+                                and ns.Airtime.NoteDescent(db.descent, zoneID, secs, overlapped, pos) then
                                 ns.OnDescentMeasured(zoneID, secs, overlapped)
                             end
                         elseif stage == "claimed" then

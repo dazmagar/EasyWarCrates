@@ -181,7 +181,8 @@ HANDLERS.airtime = function(rest)
                 math.floor(lo + 0.5), math.floor(hi + 0.5),
                 (over or 0) > 0 and (", %d with the parachute still drawn"):format(over) or ""))
             for _, d in ipairs(ns.Airtime.DescentSamples(ns.db.descent, zoneID) or {}) do
-                ns.Print(("       %3ds%s"):format(math.floor(d.secs + 0.5),
+                ns.Print(("       %3ds  %s%s"):format(math.floor(d.secs + 0.5),
+                    d.x and ("|cff777777at %.1f, %.1f|r"):format(d.x, d.y) or "|cff777777spot not recorded|r",
                     d.overlapped and "  |cffff8800parachute still drawn|r" or ""))
             end
         else
