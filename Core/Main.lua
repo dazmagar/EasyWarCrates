@@ -201,6 +201,23 @@ function ns.SetCratePin(zoneID, x, y)
     return false
 end
 
+-- A transport found circling its drop point. There is no release to time --
+-- it is already there -- so this says only where, and how long the crate will
+-- then take to come down.
+function ns.OnHovering(zoneID, spot, dist)
+    ns.lastPrediction[zoneID] = { x = spot.x, y = spot.y, at = GetServerTime() }
+    local descent, n = ns.Airtime.Descent(ns.db.descent, zoneID)
+    ns.Print(("|cffffd100circling|r |cffffd100%.1f, %.1f|r in %s -- dropping any moment,"
+        .. " |cffffd100on the ground %ss later|r%s  |cff777777(%.1f%% off the spot)|r"):format(
+        spot.x * 100, spot.y * 100, ns.GetZoneName(zoneID), math.floor(descent + 0.5),
+        n == 0 and " |cff777777(descent not measured here yet)|r" or "", dist * 100))
+    if not ns.db.waypoint then
+        ns.Print("  |cff777777no map pin: turned off in settings|r")
+    else
+        ns.SetCratePin(zoneID, spot.x, spot.y)
+    end
+end
+
 -- Called when there is a spot worth flying to, firm or not.
 function ns.OnPrediction(zoneID, result, fit)
     local s = result.aim.spot

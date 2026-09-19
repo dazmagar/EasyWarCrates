@@ -233,3 +233,25 @@ t.test("candidates fanned across the ray produce no aim at all", function()
     t.notOk(r.leading, "one on each side: flying at either is a coin toss")
     t.eq(r.reason, "spread")
 end)
+
+-- Flying into a zone to find the transport already orbiting its drop point.
+-- The addon had six samples of it and said only "not far enough yet to read a
+-- heading" while the answer was directly underneath.
+t.test("a transport circling a catalogued spot is called as that spot", function()
+    local s = spots({ 0.443, 0.298 }, { 0.375, 0.341 })
+    local r = Predict.Hovering(s, 0.44, 0.30)
+    t.ok(r.ok)
+    t.eq(r.spot, s[1], "the one underneath, not the one that happens to be first")
+    t.ok(r.distance < 0.005)
+end)
+
+t.test("circling nowhere near a catalogued spot is not snapped to one", function()
+    local r = Predict.Hovering(spots({ 0.9, 0.9 }), 0.2, 0.2)
+    t.notOk(r.ok, "a spot most of the map away does not explain this")
+    t.eq(r.reason, "nowhere-known")
+    t.ok(r.spot, "the nearest is still reported, for the readout")
+end)
+
+t.test("an uncatalogued zone is refused here too", function()
+    t.eq(Predict.Hovering({}, 0.5, 0.5).reason, "no-catalogue")
+end)

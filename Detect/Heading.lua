@@ -101,6 +101,25 @@ end
 -- Returns nil plus a reason when it cannot fit. The reason matters: a readout
 -- that says "not enough samples" while holding thirty-five of them is telling
 -- the player something false about what the transport is doing.
+-- Mean position of the window, and how far the furthest sample strays from
+-- it. Meaningful only when Fit has refused for want of a baseline: a transport
+-- that is not going anywhere is sitting on its drop point, and where it sits
+-- is worth more than the heading it no longer has.
+function Track:Centre()
+    local n = self:Count()
+    if n < MIN_SAMPLES then return nil end
+    local sx, sy = 0, 0
+    for i = self.head, self.tail do sx = sx + self.x[i]; sy = sy + self.y[i] end
+    local cx, cy = sx / n, sy / n
+    local spread = 0
+    for i = self.head, self.tail do
+        local dx, dy = self.x[i] - cx, self.y[i] - cy
+        local d = math.sqrt(dx * dx + dy * dy)
+        if d > spread then spread = d end
+    end
+    return cx, cy, spread, n
+end
+
 function Track:Fit()
     local n = self:Count()
     if n < MIN_SAMPLES then return nil, "samples" end

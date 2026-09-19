@@ -179,6 +179,30 @@ function Predict.Evaluate(spots, fit)
     return result
 end
 
+-- How near a hovering transport must sit to a catalogued spot to be called as
+-- that spot. Generous next to the 0.4% landing scatter, because this is the
+-- transport's own circling radius, not the crate's.
+local HOVER_SNAP = 0.03
+
+-- A transport with no baseline has reached its drop point and is circling it.
+-- Which spot that is needs no ray and no bearing -- it is the one underneath.
+function Predict.Hovering(spots, x, y)
+    if type(spots) ~= "table" or #spots == 0 then
+        return { ok = false, reason = "no-catalogue" }
+    end
+    local best, dist
+    for i = 1, #spots do
+        local dx, dy = spots[i].x - x, spots[i].y - y
+        local d = math.sqrt(dx * dx + dy * dy)
+        if not dist or d < dist then best, dist = spots[i], d end
+    end
+    if dist > HOVER_SNAP then
+        return { ok = false, reason = "nowhere-known", spot = best, distance = dist }
+    end
+    return { ok = true, spot = best, distance = dist }
+end
+Predict.HOVER_SNAP = HOVER_SNAP
+
 Predict.SCATTER   = SCATTER
 Predict.ERR_FLOOR = ERR_FLOOR
 Predict.GATE      = GATE

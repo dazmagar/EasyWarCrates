@@ -196,3 +196,27 @@ t.test("a turning transport reports a larger cross-track residual", function()
     t.lt(straight.rms, curved.rms, "a curve must show more cross-track scatter than a straight run")
     t.lt(straight.err, curved.err, "and must report a larger heading error")
 end)
+
+-- A transport circling its drop point has no baseline and therefore no fit,
+-- but it does have a position, and that position is the answer.
+t.test("a circling track reports its centre and how wide it circles", function()
+    local tr = Heading.NewTrack("centre")
+    local R = 0.008
+    for i = 0, 11 do
+        local a = i * math.pi / 6
+        tr:Add(1000 + i, 0.44 + R * math.cos(a), 0.30 + R * math.sin(a))
+    end
+    t.eq(tr:Fit(), nil, "this is the no-baseline case, by construction")
+    local cx, cy, spread, n = tr:Centre()
+    t.near(cx, 0.44, 1e-9, "the centre of the circle, not the newest sample")
+    t.near(cy, 0.30, 1e-9)
+    t.near(spread, R, 1e-9, "and how far it strays from it")
+    t.eq(n, 12)
+end)
+
+t.test("too few samples have no centre worth reporting", function()
+    local tr = Heading.NewTrack("centre2")
+    tr:Add(1000, 0.5, 0.5)
+    tr:Add(1001, 0.5, 0.51)
+    t.eq(tr:Centre(), nil)
+end)

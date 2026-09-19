@@ -536,8 +536,24 @@ end
 
 -- Decides whether this track has become worth telling the player about.
 function Scanner.Evaluate(zoneID, tr)
-    local fit = tr.track:Fit()
-    if not fit then return end
+    local fit, why = tr.track:Fit()
+    if not fit then
+        -- No baseline is not the same as no information. A transport that has
+        -- stopped covering ground has reached its drop point and is circling
+        -- it, which is the exact case of flying into a zone and finding one
+        -- already orbiting: the addon had six samples of it and said only
+        -- "not far enough yet to read a heading" while the answer was directly
+        -- underneath.
+        if why == "still" and not tr.committed then
+            local cx, cy = tr.track:Centre()
+            local r = cx and ns.Predict.Hovering(ns.GetDropPoints(zoneID), cx, cy)
+            if r and r.ok then
+                tr.committed = { x = r.spot.x, y = r.spot.y }
+                ns.OnHovering(zoneID, r.spot, r.distance)
+            end
+        end
+        return
+    end
 
     -- Once a transport has been called, that is the answer. It carries one
     -- crate and drops it once, so re-reading its heading afterwards is reading
