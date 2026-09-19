@@ -25,6 +25,16 @@ local spotted = {}
 -- Comfortably longer than a flight, so one plane is one announcement.
 local SPOTTED_COOLDOWN = 180
 
+-- When a zone last had a crate come down. Nothing is tracked there for a while
+-- afterwards: the transport does not despawn when it drops its cargo, it
+-- circles, so it goes on reporting itself as flying with nothing left to
+-- predict. Its vignette GUID also churns, so each reappearance built a brand
+-- new track with fresh state and narrated its own sample count from scratch.
+-- The next crate is around eighteen minutes out, so two minutes of silence
+-- costs nothing and removes the whole class of noise.
+local recentDrop = {}
+local DROP_COOLDOWN = 120
+
 local TRACK_STALE = 60  -- seconds a track may go unseen before it is dropped
 
 -- VIGNETTES_UPDATED alone is not enough to fly a heading off: it fires when the
@@ -86,6 +96,7 @@ function Scanner.Reset()
     tracks = {}
     announced = {}
     spotted = {}
+    recentDrop = {}
     stopPolling()
 end
 
@@ -262,7 +273,10 @@ function Scanner.OnVignettesUpdated()
             if pos then
                 local shard = ns.Shard.FromVignetteGUID(guid)
 
-                if stage == "flying" then
+                if stage == "flying" and (tNow - (recentDrop[zoneID] or -math.huge)) <= DROP_COOLDOWN then
+                    -- This zone's crate is already down. Whatever this
+                    -- transport is doing now, it is not carrying one.
+                elseif stage == "flying" then
                     local tr = tracks[guid]
                     if not tr then
                         tr = { track = ns.Heading.NewTrack(guid), guid = guid, zoneID = zoneID }
@@ -295,6 +309,7 @@ function Scanner.OnVignettesUpdated()
                     -- so its track survived the drop and went on reporting
                     -- "nothing-ahead" indefinitely.
                     Scanner.EndTracks(zoneID)
+                    recentDrop[zoneID] = tNow
                     if not shard then
                         ns.Debug("crate seen but its GUID carried no shard; not recorded")
                     else
