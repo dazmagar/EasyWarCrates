@@ -172,6 +172,26 @@ end
 -- Harandar, standing on map 2576, where the transport came back with no
 -- position at all. Falls back to the raw map so a zone whose sub-map IS the
 -- right space still works.
+-- Coordinates from one map, expressed in another's space.
+--
+-- A position comes back in the space of whatever map it was asked about, and
+-- everything downstream -- the catalogue, the prediction, the waypoint --
+-- speaks zone-map space. Standing in The Den, a sub-zone of Harandar, the two
+-- are wildly different, so a fallback reading handed straight on puts the
+-- crate somewhere it is not. Round-tripping through world coordinates is the
+-- only honest conversion.
+local function toZoneSpace(pos, fromMap, zoneID)
+    if not pos or not fromMap or not zoneID or fromMap == zoneID then return pos end
+    local ok, continent, world = pcall(C_Map.GetWorldPosFromMapPos, fromMap, pos)
+    if not ok or not continent or not world then return nil end
+    local ok2, _, zonePos = pcall(C_Map.GetMapPosFromWorldPos, continent, world, zoneID)
+    if not ok2 then return nil end
+    return zonePos
+end
+
+-- Returns the position and the map it is expressed in. A caller that speaks
+-- zone-map space must check the second value; the scan command is the only one
+-- that may show a reading from anywhere else, because it prints which map.
 local function vignettePosition(guid, zoneID, rawMap)
     if zoneID then
         local pos = C_VignetteInfo.GetVignettePosition(guid, zoneID)
@@ -179,7 +199,11 @@ local function vignettePosition(guid, zoneID, rawMap)
     end
     if rawMap and rawMap ~= zoneID then
         local pos = C_VignetteInfo.GetVignettePosition(guid, rawMap)
-        if pos then return pos, rawMap end
+        if pos then
+            local moved = toZoneSpace(pos, rawMap, zoneID)
+            if moved then return moved, zoneID end
+            return pos, rawMap
+        end
     end
     return nil
 end
@@ -244,8 +268,8 @@ function Scanner.Poll()
         if info and ns.VignetteStage(info.vignetteID) ~= "flying" then
             tracks[trackZone] = nil
         elseif info then
-            local pos = vignettePosition(tr.guid, trackZone, rawMap)
-            if pos then
+            local pos, posMap = vignettePosition(tr.guid, trackZone, rawMap)
+            if pos and posMap == trackZone then
                 tr.lastSeen = now
                 if tr.track:Add(now, pos.x, pos.y) then
                     Scanner.Evaluate(trackZone, tr)
@@ -414,14 +438,15 @@ function Scanner.OnVignettesUpdated()
         local info = C_VignetteInfo.GetVignetteInfo(guid)
         local stage = info and ns.VignetteStage(info.vignetteID)
         if stage then
-            local pos = vignettePosition(guid, zoneID, rawMap)
-            if not pos and (tNow - (noPosWarned[zoneID] or -math.huge)) > NO_POS_COOLDOWN then
+            local pos, posMap = vignettePosition(guid, zoneID, rawMap)
+            local usable = pos and posMap == zoneID
+            if not usable and (tNow - (noPosWarned[zoneID] or -math.huge)) > NO_POS_COOLDOWN then
                 noPosWarned[zoneID] = tNow
-                ns.Print(("|cffff8800a %s crate in %s has no position the game will give|r"
+                ns.Print(("|cffff8800a %s crate in %s has no position on the zone map|r"
                     .. " |cff777777-- not tracking it; /ewc scan for detail|r"):format(
                     stage, ns.GetZoneName(zoneID)))
             end
-            if pos then
+            if usable then
                 local shard = ns.Shard.FromVignetteGUID(guid)
 
                 if stage == "flying" and (tNow - (recentDrop[zoneID] or -math.huge)) <= DROP_COOLDOWN then
