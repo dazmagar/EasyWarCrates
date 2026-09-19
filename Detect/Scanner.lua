@@ -31,17 +31,18 @@ local TRACK_STALE = 60  -- seconds a track may go unseen before it is dropped
 -- vignette SET changes, and a transport crossing a zone is one unchanging
 -- vignette that merely moves. So the event opens a track and this poll feeds it.
 --
--- Measured in Voidstorm over a 69-second flight: the poll ran at 4Hz and got a
--- NEW position roughly every 5.5 seconds. GetVignettePosition simply does not
--- refresh faster than that, so the sample rate is the game's, not ours, and
--- polling harder buys nothing. Kept at 1Hz, which is well inside that and a
--- quarter of the wakeups.
+-- How fast positions actually arrive varies a great deal, and not with the poll
+-- rate. Two flights, both logged: one in Voidstorm yielded a new position about
+-- every 5.5 seconds while polling at 4Hz, so five samples took 25 seconds; one
+-- in Zul'Aman reached thirty samples in eighteen, roughly one a second. The
+-- difference is the event, which also feeds the track and fires far more often
+-- for some flights than others. So this poll is a floor under the sample rate,
+-- not the thing that sets it, and raising it does not help the slow case.
 --
--- The consequence worth knowing before tuning Heading.MIN_SAMPLES: five samples
--- take about 25 seconds to collect, and that is the whole delay between
--- spotting a transport and being able to call its target. A transport only
--- visible for less than that cannot be predicted at all, which is exactly what
--- happened the first time in Voidstorm.
+-- Worth knowing before tuning Heading.MIN_SAMPLES: in the slow case the wait
+-- for five samples IS the delay between spotting a transport and being able to
+-- call its target, and a transport visible for less than that cannot be
+-- predicted at all. That is what happened on the first Voidstorm flight.
 local POLL_INTERVAL = 1.0
 local ticker
 
