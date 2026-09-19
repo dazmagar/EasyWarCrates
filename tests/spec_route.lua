@@ -133,6 +133,10 @@ t.test("an empty route plans nothing without complaining", function()
     t.eq(Route.Next(nil), nil)
 end)
 
-t.test("Describe round-trips what was parsed", function()
-    t.eq(Route.Describe(Route.Parse("ZA Hd SR VS")), "ZA Hd SR VS")
+-- Not a literal round trip: parsing is forgiving and Describe is canonical, so
+-- whatever spelling went in comes back the one way the addon writes it.
+t.test("Describe normalises whatever spelling was typed", function()
+    t.eq(Route.Describe(Route.Parse("ZA HD SR VS")), "ZA HD SR VS")
+    t.eq(Route.Describe(Route.Parse("za hd sr vs")), "ZA HD SR VS")
+    t.eq(Route.Describe(Route.Parse("zulaman, harandar / slay void")), "ZA HD SR VS")
 end)

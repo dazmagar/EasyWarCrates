@@ -10,8 +10,9 @@ local ADDON, ns = ...
 -- hand-tuned 1091-1100 spread sits inside the same band, and HGLog only ever
 -- accepts an observed gap in 1090-1105. Nobody has pinned it finer than that,
 -- so a per-zone table would be recording measurement noise as fact. The real
--- fix is to learn it per shard from consecutive drops, which this leaves room
--- for rather than pretending to already know.
+-- fix is to learn it per shard from consecutive drops, which Track/Timers.lua
+-- now does -- these stay as the figure to fall back on until it has.
+--
 -- abbr is what crate farmers actually say, and what the route editor accepts as
 -- input. Taken from WarCrateTracker (MIT, Copyright 2024 Samuel Colburn), which
 -- carries the same set minus its "MID:" prefix.
@@ -34,7 +35,7 @@ local ADDON, ns = ...
 local ZONES = {
     [2395] = { name = "Eversong Woods",  abbr = "EW", interval = 1100, travel = 45 },
     [2405] = { name = "Voidstorm",       abbr = "VS", interval = 1100, travel = 75 },
-    [2413] = { name = "Harandar",        abbr = "Hd", interval = 1100, travel = 75 },
+    [2413] = { name = "Harandar",        abbr = "HD", interval = 1100, travel = 75 },
     [2437] = { name = "Zul'Aman",        abbr = "ZA", interval = 1100, travel = 90 },
     [2444] = { name = "Slayer's Rise",   abbr = "SR", interval = 1100, travel = 90 },
     [2512] = { name = "The Coiled Isle", abbr = "CI", interval = 1100, travel = 75 },
