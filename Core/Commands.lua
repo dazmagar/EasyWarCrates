@@ -180,6 +180,21 @@ HANDLERS.airtime = function(rest)
         ns.db.release = {}
         return ns.Print("parachute and release measurements cleared.")
     end
+    -- Drop one reading. A zone-wide reset costs every other reading there, and
+    -- each one is a full crate cycle -- about eighteen minutes -- to replace.
+    local dropZone, dropIdx = tostring(rest or ""):lower():match("^drop%s+(%S+)%s+(%d+)$")
+    if dropZone then
+        local zoneID = ns.ResolveZoneInput(dropZone)
+        if not zoneID then return ns.Print(("no zone called '%s'"):format(dropZone)) end
+        local list = ns.Airtime.DescentSamples(ns.db.descent, zoneID)
+        local d = list and list[tonumber(dropIdx)]
+        if not d then return ns.Print(("%s has no reading %s"):format(
+            ns.GetZoneName(zoneID), dropIdx)) end
+        table.remove(list, tonumber(dropIdx))
+        return ns.Print(("dropped the %ds reading from %s -- %d left"):format(
+            math.floor(d.secs + 0.5), ns.GetZoneName(zoneID), #list))
+    end
+
     ns.Print("time under the parachute, measured per zone:")
     local any = false
     for zoneID in pairs(ns.ZONES) do
@@ -190,8 +205,8 @@ HANDLERS.airtime = function(rest)
                 ns.GetZoneAbbr(zoneID), math.floor(mean + 0.5), n, n == 1 and "" or "s",
                 math.floor(lo + 0.5), math.floor(hi + 0.5),
                 (over or 0) > 0 and (", %d with the parachute still drawn"):format(over) or ""))
-            for _, d in ipairs(ns.Airtime.DescentSamples(ns.db.descent, zoneID) or {}) do
-                ns.Print(("       %3ds  %s%s"):format(math.floor(d.secs + 0.5),
+            for i, d in ipairs(ns.Airtime.DescentSamples(ns.db.descent, zoneID) or {}) do
+                ns.Print(("   %2d. %3ds  %s%s"):format(i, math.floor(d.secs + 0.5),
                     d.x and ("|cff777777at %.1f, %.1f|r"):format(d.x, d.y) or "|cff777777spot not recorded|r",
                     d.partial and "  |cffff8800joined mid-fall, not counted|r"
                         or (d.overlapped and "  |cffff8800parachute still drawn|r" or "")))
@@ -525,7 +540,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc timers   -- tracked crate timers")
     ns.Print("  /ewc interval -- measured gaps; 'reset' clears them")
     ns.Print("  /ewc offsets  -- whether the zones' cycles sit at a fixed offset")
-    ns.Print("  /ewc airtime  -- measured parachute times; 'reset [ZONE]' clears them")
+    ns.Print("  /ewc airtime  -- measured parachute times; 'drop ZONE N', 'reset [ZONE]'")
     ns.Print("  /ewc shard    -- cross-check the shard number against a creature GUID")
     ns.Print("  /ewc watch    -- toggle the live readout while a transport is tracked")
     ns.Print("  /ewc waypoint -- toggle the map pin on a prediction")
