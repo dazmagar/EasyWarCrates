@@ -77,6 +77,13 @@ local fallAtlas, atlasFlip = {}, {}
 -- did we watch this fall BEGIN. A parachute present in the first sweep of a
 -- zone was already in the air before we arrived.
 local lastSweptStamp, lastFalling = {}, {}
+
+-- Last complaint about a vignette the game would not place, per zone. A crate
+-- whose position cannot be resolved is skipped, and skipping it silently is
+-- the failure this addon exists to prevent -- so it says so, once a minute at
+-- most rather than once a second.
+local noPosWarned = {}
+local NO_POS_COOLDOWN = 60
 -- A previous sweep older than this is not evidence of having been watching.
 local SWEEP_FRESH = 60
 
@@ -196,6 +203,7 @@ function Scanner.Reset()
     releaseLag = {}
     fallAtlas, atlasFlip = {}, {}
     lastSweptStamp, lastFalling = {}, {}
+    noPosWarned = {}
     liveCrate = {}
     stopPolling()
 end
@@ -407,6 +415,12 @@ function Scanner.OnVignettesUpdated()
         local stage = info and ns.VignetteStage(info.vignetteID)
         if stage then
             local pos = vignettePosition(guid, zoneID, rawMap)
+            if not pos and (tNow - (noPosWarned[zoneID] or -math.huge)) > NO_POS_COOLDOWN then
+                noPosWarned[zoneID] = tNow
+                ns.Print(("|cffff8800a %s crate in %s has no position the game will give|r"
+                    .. " |cff777777-- not tracking it; /ewc scan for detail|r"):format(
+                    stage, ns.GetZoneName(zoneID)))
+            end
             if pos then
                 local shard = ns.Shard.FromVignetteGUID(guid)
 
