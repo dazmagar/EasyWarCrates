@@ -510,7 +510,11 @@ function Scanner.OnVignettesUpdated()
                             releaseLag[key], fallAtlas[key], atlasFlip[key] = nil, nil, nil
                         end
 
-                        local verdict, _, gap = ns.Timers.Record(db.crates, zoneID, shard, stamp, stage)
+                        -- A parachute we joined partway through anchors the
+                        -- timer no better than finding the crate on the ground.
+                        local source = (stage == "falling" and partialFall[key])
+                            and "midfall" or stage
+                        local verdict, _, gap = ns.Timers.Record(db.crates, zoneID, shard, stamp, source)
                         if gap then
                             local noted = ns.Timers.NoteGap(db.gaps, zoneID, gap,
                                 ns.GetZoneInterval(zoneID))

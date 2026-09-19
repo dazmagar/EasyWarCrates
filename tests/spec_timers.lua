@@ -315,3 +315,33 @@ t.test("sorting an empty database is not an error", function()
     t.eq(#Timers.Sorted(Timers.New(), function() return INTERVAL end, T0), 0)
     t.eq(#Timers.Sorted(nil, function() return INTERVAL end, T0), 0)
 end)
+
+-- Zul'Aman reported a 989-second cycle against a true figure near 1090,
+-- because both ends of the gap were crates already under their parachutes when
+-- the player arrived. Each timestamp is late by however much of the fall had
+-- already happened, and the gap inherits both errors.
+t.test("a parachute joined partway through anchors no better than the ground", function()
+    local d = Timers.New()
+    local _, e = Timers.Record(d, 2437, 97, 1000, "midfall")
+    t.notOk(e.precise, "it says a crate spawned some minutes ago, nothing more")
+
+    local _, _, gap = Timers.Record(d, 2437, 97, 1000 + 989, "midfall")
+    t.eq(gap, nil, "and two of them are not a cycle measurement")
+end)
+
+t.test("a parachute seen to leave the transport still measures the cycle", function()
+    local d = Timers.New()
+    local _, e = Timers.Record(d, 2437, 97, 1000, "falling")
+    t.ok(e.precise)
+    local _, _, gap = Timers.Record(d, 2437, 97, 1000 + 1090, "falling")
+    t.eq(gap, 1090, "the case this must not break")
+end)
+
+t.test("a real sighting still overrides one joined mid-fall", function()
+    local d = Timers.New()
+    Timers.Record(d, 2437, 97, 1000, "midfall")
+    local verdict, e = Timers.Record(d, 2437, 97, 1040, "falling")
+    t.eq(verdict, "refined")
+    t.eq(e.ts, 1040)
+    t.ok(e.precise)
+end)

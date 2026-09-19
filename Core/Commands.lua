@@ -295,7 +295,29 @@ end
 -- Every gap between two drops this client has actually seen. The point of
 -- sitting in one zone through two drops is to fill this in.
 HANDLERS.interval = function(rest)
-    if tostring(rest or ""):lower():match("^reset") then
+    -- Same shape as /ewc airtime: numbered, droppable one at a time, resettable
+    -- per zone. An observation costs two full cycles on one shard to obtain.
+    local dropZone, dropIdx = tostring(rest or ""):lower():match("^drop%s+(%S+)%s+(%d+)$")
+    if dropZone then
+        local zoneID = ns.ResolveZoneInput(dropZone)
+        if not zoneID then return ns.Print(("no zone called '%s'"):format(dropZone)) end
+        local list = (ns.db.gaps or {})[zoneID]
+        local g = list and list[tonumber(dropIdx)]
+        if not g then return ns.Print(("%s has no observation %s"):format(
+            ns.GetZoneName(zoneID), dropIdx)) end
+        table.remove(list, tonumber(dropIdx))
+        return ns.Print(("dropped the %ds observation from %s -- %d left"):format(
+            math.floor(g.gap + 0.5), ns.GetZoneName(zoneID), #list))
+    end
+    local reset = tostring(rest or ""):lower():match("^reset%s*(.*)$")
+    if reset then
+        if reset ~= "" then
+            local zoneID = ns.ResolveZoneInput(reset)
+            if not zoneID then return ns.Print(("no zone called '%s'"):format(reset)) end
+            ns.db.gaps[zoneID] = nil
+            return ns.Print(("interval measurements cleared for %s."):format(
+                ns.GetZoneName(zoneID)))
+        end
         ns.db.gaps = {}
         return ns.Print("interval measurements cleared.")
     end
@@ -314,8 +336,8 @@ HANDLERS.interval = function(rest)
                 ns.GetShippedInterval(zoneID),
                 math.abs(inUse - ns.GetShippedInterval(zoneID)) > 0.5 and "|cff33ff99measured " or "shipped ",
                 math.floor(inUse + 0.5)))
-            for _, g in ipairs(list) do
-                ns.Print(("   %ds%s"):format(math.floor(g.gap + 0.5),
+            for i, g in ipairs(list) do
+                ns.Print(("   %2d. %ds%s"):format(i, math.floor(g.gap + 0.5),
                     g.cycles > 1 and (" over %d cycles = %ds each"):format(
                         g.cycles, math.floor(g.per + 0.5)) or "  |cff777777single cycle|r"))
             end
@@ -541,7 +563,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc route    -- the rotation: what to fly to and when to leave")
     ns.Print("  /ewc travel   -- capital-to-zone flight times used by the route")
     ns.Print("  /ewc timers   -- tracked crate timers")
-    ns.Print("  /ewc interval -- measured gaps; 'reset' clears them")
+    ns.Print("  /ewc interval -- measured gaps; 'drop ZONE N', 'reset [ZONE]'")
     ns.Print("  /ewc offsets  -- whether the zones' cycles sit at a fixed offset")
     ns.Print("  /ewc airtime  -- measured parachute times; 'drop ZONE N', 'reset [ZONE]'")
     ns.Print("  /ewc shard    -- cross-check the shard number against a creature GUID")

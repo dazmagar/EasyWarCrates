@@ -18,7 +18,14 @@ ns.Timers = Timers
 -- decide whether to show a countdown or a "~" estimate.
 local PRECISION = {
     flying   = 3,   -- the transport, caught in the air
-    falling  = 2,   -- under its parachute
+    falling  = 2,   -- under its parachute, seen to leave the transport
+    -- A parachute we only joined partway through. It looks like a falling
+    -- sighting and is worth nothing like one: the crate left the transport an
+    -- unknown time earlier, so the timestamp is late by an unknown amount --
+    -- which is exactly what "found it on the ground" means. Ranked with it.
+    -- Zul'Aman measured a 989s cycle against a true ~1090 with both ends of
+    -- the gap seeded this way.
+    midfall  = 1,
     ground   = 1,   -- found already landed
     claimed  = 1,   -- found already looted
     manual   = 0,   -- typed in by hand
