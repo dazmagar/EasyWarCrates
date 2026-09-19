@@ -216,6 +216,23 @@ HANDLERS.shard = function()
     local shard, instance = ns.Shard.FromGUID(guid)
     ns.Print(("creature GUID says shard=%s instance=%s"):format(tostring(shard), tostring(instance)))
 
+    -- Height. UnitPosition is the only thing in the API that reports a z at
+    -- all: vignettes carry x and y only, and there is no way to ask what the
+    -- ground is doing at an arbitrary point. So the question of whether the
+    -- descent could be computed instead of measured reduces to whether the
+    -- transport can be referenced as a unit -- mouse over it and find out.
+    local ok, y, x, z = pcall(UnitPosition, unit)
+    if ok and z then
+        ns.Print(("|cff33ff99%s has a world position|r: x=%.1f y=%.1f |cffffd100z=%.1f|r"):format(
+            unit, x, y, z))
+        local okP, py, px, pz = pcall(UnitPosition, "player")
+        if okP and pz then
+            ns.Print(("  you are at z=%.1f -- |cffffd100%.1f above or below you|r"):format(pz, z - pz))
+        end
+    else
+        ns.Print(("|cffff8800%s reports no world position|r -- no height available for it"):format(unit))
+    end
+
     local list = ns.Scanner.Sweep()
     for _, v in ipairs(list) do
         if v.stage then
