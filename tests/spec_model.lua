@@ -206,3 +206,36 @@ t.test("live zones float above the countdowns, most urgent first", function()
     t.eq(rows[2].zoneID, SR, "then one about to land")
     t.eq(rows[3].zoneID, ZA, "then the soonest countdown")
 end)
+
+-- The window said "no transport in the air" while one plainly was, because
+-- the prediction returned nothing whenever the heading could not be fitted --
+-- which is the first seconds of a flight and again once it reaches its drop
+-- point and circles. Both are moments someone looks at the window.
+t.test("a transport with no usable heading is still reported", function()
+    local prev = ns.Scanner
+    ns.Scanner = { Prediction = function()
+        return { ok = false, reason = "gathering", samples = 3 }
+    end }
+    local head = Model.Headline(ZA, T0)
+    ns.Scanner = prev
+    t.ok(head, "there is a transport, so there is something to say")
+    t.notOk(head.ready)
+    t.ok(head.text:find("3"), "and how far along reading it has got")
+end)
+
+t.test("a transport that has stopped moving says so", function()
+    local prev = ns.Scanner
+    ns.Scanner = { Prediction = function() return { ok = false, reason = "not-moving" } end }
+    local head = Model.Headline(ZA, T0)
+    ns.Scanner = prev
+    t.ok(head)
+    t.ok(head.text:find("not going anywhere"))
+end)
+
+t.test("no transport at all is still no headline", function()
+    local prev = ns.Scanner
+    ns.Scanner = { Prediction = function() return nil end }
+    local head = Model.Headline(ZA, T0)
+    ns.Scanner = prev
+    t.eq(head, nil, "this is the one case the window should say nothing for")
+end)

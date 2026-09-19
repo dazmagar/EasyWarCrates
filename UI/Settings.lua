@@ -13,9 +13,15 @@ local function build()
     local category, layout = Settings.RegisterVerticalLayoutCategory("EasyWarCrates")
     ns.settingsCategoryID = category:GetID()
 
+    -- The default has to be the addon's own, not a hardcoded true. Passing
+    -- true for every checkbox would have made "Narrate tracking" and "Verbose
+    -- log" -- both diagnostics, both off by design -- default to on, which is
+    -- how a fresh install would have started shouting at its owner.
     local function checkbox(key, name, tooltip, onChange)
+        local default = ns.DEFAULTS[key]
+        if default == nil then default = false end
         local setting = Settings.RegisterAddOnSetting(category,
-            "EasyWarCrates_" .. key, key, ns.db, Settings.VarType.Boolean, name, true)
+            "EasyWarCrates_" .. key, key, ns.db, Settings.VarType.Boolean, name, default)
         Settings.CreateCheckbox(category, setting, tooltip)
         if onChange then
             Settings.SetOnValueChangedCallback("EasyWarCrates_" .. key, function(_, _, value)

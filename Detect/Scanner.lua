@@ -318,13 +318,23 @@ end
 
 -- Current best guess for the zone, or nil. Exposed so the UI and the slash
 -- commands read the same answer the scanner acted on.
+-- Whatever is known about the transport in this zone, or nil if there is none.
+--
+-- Returning nil for a track that has no usable heading conflated two different
+-- things and the window said "no transport in the air" while one was plainly
+-- in it. A heading is missing for the first few seconds after a transport
+-- appears and again once it reaches its drop point and starts circling --
+-- which is the beginning and the end of every flight, and both are moments
+-- someone looks at the window.
 function Scanner.Prediction(zoneID)
     local tr = tracks[zoneID]
-    local fit = tr and tr.track:Fit()
-    if not fit then return nil end
+    if not tr then return nil end
 
-    local r = ns.Predict.Evaluate(ns.GetDropPoints(zoneID), fit)
+    local fit, why = tr.track:Fit()
+    local r = fit and ns.Predict.Evaluate(ns.GetDropPoints(zoneID), fit)
+        or { ok = false, reason = why == "still" and "not-moving" or "gathering" }
     r.fit, r.committed, r.arrived = fit, tr.committed, tr.arrived
+    r.samples = tr.track:Count()
     return r
 end
 

@@ -22,6 +22,8 @@ local DEFAULTS = {
     -- a default and does not belong in this table.
 }
 
+ns.DEFAULTS = DEFAULTS
+
 local PREFIX = "|cff33ddaa[EWC]|r "
 
 function ns.Print(...)
@@ -178,9 +180,28 @@ function ns.OnPrediction(zoneID, result, fit)
         s.x * 100, s.y * 100, ns.GetZoneName(zoneID), when,
         math.deg(math.atan(result.best.tan)), fit.n))
 
-    if ns.db.waypoint and C_Map.CanSetUserWaypoint(zoneID) then
+    -- Say when the pin does not get placed, and why. It failed silently once
+    -- in Zul'Aman: the call was right, announced and acted on by the player,
+    -- and the only thing missing was the marker -- with nothing on screen to
+    -- say whether the addon had chosen not to place one or had tried and been
+    -- refused.
+    if not ns.db.waypoint then
+        ns.Print("  |cff777777no map pin: turned off in settings|r")
+    elseif not C_Map.CanSetUserWaypoint(zoneID) then
+        ns.Print(("  |cffff8800no map pin: the game will not allow one on %s|r"):format(
+            ns.GetZoneName(zoneID)))
+    else
         C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(zoneID, s.x, s.y))
         C_SuperTrack.SetSuperTrackedUserWaypoint(true)
+        -- Read back rather than trusting the call. A pin that did not take is
+        -- exactly as useful as no pin, and the point of saying so is to find
+        -- out which happened.
+        local set = C_Map.GetUserWaypoint()
+        if not set then
+            ns.Print("  |cffff8800the map pin did not take|r")
+        else
+            ns.Debug("map pin set")
+        end
     end
 end
 

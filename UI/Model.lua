@@ -170,10 +170,16 @@ function Model.Headline(zoneID, now)
     -- than saying "probably here, not sure". The waypoint still waits.
     if r.best then
         return {
-            text = ("probably %.1f, %.1f (%s)"):format(
-                r.best.spot.x * 100, r.best.spot.y * 100, tostring(r.reason)),
+            text = ("probably %.1f, %.1f -- %s"):format(
+                r.best.spot.x * 100, r.best.spot.y * 100,
+                r.reason == "ambiguous" and "two spots on this heading"
+                or tostring(r.reason)),
             ready = false,
         }
     end
-    return { text = "transport in the air", ready = false }
+    if r.reason == "gathering" then
+        return { text = ("transport spotted, reading its heading (%d)"):format(r.samples or 0),
+                 ready = false }
+    end
+    return { text = "transport in the air, not going anywhere", ready = false }
 end
