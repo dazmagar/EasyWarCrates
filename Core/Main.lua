@@ -121,13 +121,15 @@ end
 
 -- A parachute timed from release to landing. The one leg of the flight that
 -- cannot be computed and has to be measured.
-function ns.OnDescentMeasured(zoneID, seconds)
-    local mean, n, lo, hi = ns.Airtime.Descent(ns.db.descent, zoneID)
-    ns.Print(("|cff33ff99descent measured|r in %s: |cffffd100%ds|r under the parachute"):format(
-        ns.GetZoneName(zoneID), math.floor(seconds + 0.5)))
+function ns.OnDescentMeasured(zoneID, seconds, overlapped)
+    local mean, n, lo, hi, over = ns.Airtime.Descent(ns.db.descent, zoneID)
+    ns.Print(("|cff33ff99descent measured|r in %s: |cffffd100%ds|r under the parachute%s"):format(
+        ns.GetZoneName(zoneID), math.floor(seconds + 0.5),
+        overlapped and " |cffff8800(parachute still drawn -- may run long)|r" or ""))
     if n > 1 then
-        ns.Print(("  %d measured here: mean %ds, range %d-%d"):format(
-            n, math.floor(mean + 0.5), math.floor(lo + 0.5), math.floor(hi + 0.5)))
+        ns.Print(("  %d measured here: mean %ds, range %d-%d%s"):format(
+            n, math.floor(mean + 0.5), math.floor(lo + 0.5), math.floor(hi + 0.5),
+            over > 0 and ("  |cff777777%d overlapped|r"):format(over) or ""))
     end
 end
 

@@ -287,6 +287,23 @@ function Scanner.OnVignettesUpdated()
     local guids = C_VignetteInfo.GetVignettes()
     if type(guids) ~= "table" then return end
 
+    -- Which zone and shard currently show a parachute, gathered before acting
+    -- on anything. The game will keep drawing one for a crate that is already
+    -- down -- observed lingering eight to ten seconds in Zul'Aman -- so a
+    -- landing recorded while its parachute is still up has an ambiguous
+    -- moment, and the descent reading may run long by that much. Recorded as a
+    -- flag on the reading rather than used to reject it: whether those
+    -- readings are really biased is something the samples can show and a guess
+    -- cannot.
+    local fallingNow = {}
+    for _, guid in ipairs(guids) do
+        local info = C_VignetteInfo.GetVignetteInfo(guid)
+        if info and ns.VignetteStage(info.vignetteID) == "falling" then
+            local sh = ns.Shard.FromVignetteGUID(guid)
+            if sh then fallingNow[fallKey(zoneID, sh)] = true end
+        end
+    end
+
     for _, guid in ipairs(guids) do
         local info = C_VignetteInfo.GetVignetteInfo(guid)
         local stage = info and ns.VignetteStage(info.vignetteID)
@@ -342,9 +359,10 @@ function Scanner.OnVignettesUpdated()
                         elseif stage == "ground" and fallingSince[key] then
                             local secs = stamp - fallingSince[key]
                             fallingSince[key] = nil
+                            local overlapped = fallingNow[key]
                             if secs <= DESCENT_PAIR_MAX
-                                and ns.Airtime.NoteDescent(db.descent, zoneID, secs) then
-                                ns.OnDescentMeasured(zoneID, secs)
+                                and ns.Airtime.NoteDescent(db.descent, zoneID, secs, overlapped) then
+                                ns.OnDescentMeasured(zoneID, secs, overlapped)
                             end
                         elseif stage == "claimed" then
                             fallingSince[key] = nil

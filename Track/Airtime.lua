@@ -39,25 +39,55 @@ Airtime.DESCENT_GUESS = DESCENT_GUESS
 local CONFIDENT_N = 3
 Airtime.CONFIDENT_N = CONFIDENT_N
 
-function Airtime.NoteDescent(store, zoneID, seconds)
+-- overlapped says the parachute and on-ground vignettes were live in the same
+-- sweep. The game does that: a crate can be down while its parachute is still
+-- drawn, seen live in Zul'Aman. When it happens the landing moment is
+-- ambiguous, so the reading may run long.
+--
+-- Flagged rather than rejected. Whether an overlapped reading is actually
+-- biased is a question the samples can answer and guessing cannot, and
+-- throwing away every reading from a lifecycle that misbehaves regularly would
+-- leave very little data.
+--
+-- Samples are kept individually rather than folded into a running sum, for the
+-- same reason the interval gaps are: with one reading per zone a mean is not a
+-- measurement, and the spread is the thing worth seeing.
+function Airtime.NoteDescent(store, zoneID, seconds, overlapped)
     if type(store) ~= "table" or not zoneID then return nil end
     seconds = tonumber(seconds)
     if not seconds or seconds < DESCENT_MIN or seconds > DESCENT_MAX then return nil end
 
-    local acc = store[zoneID]
-    if not acc then acc = { n = 0, sum = 0, min = nil, max = nil }; store[zoneID] = acc end
-    acc.n = acc.n + 1
-    acc.sum = acc.sum + seconds
-    if not acc.min or seconds < acc.min then acc.min = seconds end
-    if not acc.max or seconds > acc.max then acc.max = seconds end
-    return acc
+    local list = store[zoneID]
+    if type(list) ~= "table" or list.n then
+        -- Either nothing yet, or the old running-sum shape. Start clean rather
+        -- than mixing two shapes in one table.
+        list = {}
+        store[zoneID] = list
+    end
+    list[#list + 1] = { secs = seconds, overlapped = overlapped or nil }
+    while #list > 40 do table.remove(list, 1) end
+    return list[#list]
 end
 
--- mean, n, min, max -- or the guess with n = 0 when nothing has been measured.
+-- mean, n, min, max, overlappedCount -- or the guess with n = 0 when nothing
+-- has been measured.
 function Airtime.Descent(store, zoneID)
-    local acc = store and store[zoneID]
-    if not acc or acc.n == 0 then return DESCENT_GUESS, 0 end
-    return acc.sum / acc.n, acc.n, acc.min, acc.max
+    local list = store and store[zoneID]
+    if type(list) ~= "table" or #list == 0 then return DESCENT_GUESS, 0 end
+    local sum, lo, hi, over = 0, nil, nil, 0
+    for _, d in ipairs(list) do
+        sum = sum + d.secs
+        if not lo or d.secs < lo then lo = d.secs end
+        if not hi or d.secs > hi then hi = d.secs end
+        if d.overlapped then over = over + 1 end
+    end
+    return sum / #list, #list, lo, hi, over
+end
+
+-- The individual readings, for inspection.
+function Airtime.DescentSamples(store, zoneID)
+    local list = store and store[zoneID]
+    return (type(list) == "table" and not list.n) and list or nil
 end
 
 -- Seconds until the transport reaches the spot it was called for. nil when the

@@ -51,6 +51,34 @@ t.test("measured descents replace the guess", function()
     t.eq(hi, 105)
 end)
 
+-- The game keeps drawing a parachute for a crate that is already down, seen
+-- lingering eight to ten seconds in Zul'Aman. A reading taken then may run
+-- long by about that much, which is the difference between the 98s measured
+-- there and the 87s measured cleanly in Harandar -- quite possibly the same
+-- descent twice rather than two different zones behaving differently.
+t.test("a reading taken with the parachute still drawn is flagged", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 87)
+    Airtime.NoteDescent(store, ZONE, 98, true)
+    local mean, n, lo, hi, over = Airtime.Descent(store, ZONE)
+    t.eq(n, 2)
+    t.eq(over, 1, "one of the two is suspect and the readout has to be able to say so")
+    t.near(mean, 92.5, 1e-9, "flagged, not discarded")
+    t.eq(lo, 87)
+    t.eq(hi, 98)
+end)
+
+t.test("individual readings are kept, not just their summary", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 87)
+    Airtime.NoteDescent(store, ZONE, 98, true)
+    local samples = Airtime.DescentSamples(store, ZONE)
+    t.eq(#samples, 2)
+    t.eq(samples[1].secs, 87)
+    t.eq(samples[1].overlapped, nil)
+    t.eq(samples[2].overlapped, true)
+end)
+
 t.test("an implausible descent is refused", function()
     local store = {}
     t.eq(Airtime.NoteDescent(store, ZONE, 2), nil, "two seconds is not a parachute")
