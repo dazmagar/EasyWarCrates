@@ -17,6 +17,7 @@ Detect/Heading.lua
 Detect/Predict.lua
 Track/Timers.lua
 Track/Learn.lua
+Track/Route.lua
 
 # Below here the files create frames and register events at load, so they only
 # run in game. Kept deliberately thin -- they move numbers between the game and

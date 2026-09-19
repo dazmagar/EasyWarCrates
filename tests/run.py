@@ -27,6 +27,7 @@ ADDON_FILES = [
     "Detect/Predict.lua",
     "Track/Timers.lua",
     "Track/Learn.lua",
+    "Track/Route.lua",
 ]
 
 # Create frames and register events at load, so they only run in game.
