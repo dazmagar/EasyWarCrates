@@ -225,6 +225,68 @@ HANDLERS.interval = function()
     end
 end
 
+-- The rotation. With no argument it plans; with one it sets the route.
+HANDLERS.route = function(rest)
+    if rest and rest ~= "" then
+        local zones, bad = ns.Route.Parse(rest)
+        for _, word in ipairs(bad) do
+            ns.Print(("|cffff8800did not recognise|r %s"):format(word))
+        end
+        if #zones == 0 then
+            return ns.Print("nothing usable in that. Try: /ewc route ZA Hd SR VS")
+        end
+        ns.db.route = zones
+        ns.Print("route set: " .. ns.Route.Describe(zones))
+    end
+
+    if #ns.db.route == 0 then
+        ns.Print("no route yet. Set one with |cffffffff/ewc route ZA Hd SR VS|r")
+        return
+    end
+
+    local plan = ns.Route.Plan(ns.db.crates, ns.db.route, ns.GetZoneInterval,
+        ns.GetZoneTravel, GetServerTime())
+    local next_ = ns.Route.Next(plan)
+    ns.Print("route: " .. ns.Route.Describe(ns.db.route))
+    for _, row in ipairs(plan) do
+        local mark = (row == next_) and "|cff33ff99>|r" or " "
+        if row.status == "unknown" then
+            ns.Print(("%s %-3s |cff777777nothing timed here yet|r"):format(mark, ns.GetZoneAbbr(row.zoneID)))
+        else
+            local colour = row.status == "missed" and "|cffff5555"
+                or (row.status == "go" and "|cff33ff99" or "|cffffd100")
+            ns.Print(("%s %-3s shard %-6s drop in %s  %sleave in %s|r%s"):format(
+                mark, ns.GetZoneAbbr(row.zoneID), tostring(row.shardID),
+                ns.FormatClock(row.dropIn), colour,
+                row.leaveIn >= 0 and ns.FormatClock(row.leaveIn) or "NOW",
+                (row.missed or 0) > 0 and ("  |cff777777x%d missed|r"):format(row.missed) or ""))
+        end
+    end
+    if not next_ then
+        ns.Print("|cffff5555nothing on this route is reachable right now|r")
+    end
+end
+
+-- Capital-to-zone flight times, which the planner needs and nobody has
+-- measured. "/ewc travel" lists them, "/ewc travel ZA 70" sets one.
+HANDLERS.travel = function(rest)
+    local word, secs = tostring(rest or ""):match("^(%a+)%s+(%d+)")
+    if word then
+        local zoneID = ns.ResolveZoneInput(word)
+        if not zoneID then return ns.Print("do not know the zone " .. word) end
+        ns.db.travel[zoneID] = tonumber(secs)
+        ns.Print(("%s: %ds from the capital"):format(ns.GetZoneName(zoneID), tonumber(secs)))
+        return
+    end
+    ns.Print("capital to zone, in seconds:")
+    for zoneID in pairs(ns.ZONES) do
+        ns.Print(("  %-3s %-16s %3ds%s"):format(
+            ns.GetZoneAbbr(zoneID), ns.GetZoneName(zoneID), ns.GetZoneTravel(zoneID),
+            ns.db.travel[zoneID] and "  |cff33ff99yours|r" or "  |cff777777estimate|r"))
+    end
+    ns.Print("|cff777777set one with /ewc travel ZA 70|r")
+end
+
 HANDLERS.watch = function()
     ns.db.watch = not ns.db.watch
     ns.Print("live tracking readout " .. (ns.db.watch and "on" or "off"))
@@ -254,6 +316,8 @@ HANDLERS.help = function()
     ns.Print("  /ewc scan     -- every vignette in range, raw. Use this first on a new patch")
     ns.Print("  /ewc predict  -- live heading fit and where it points")
     ns.Print("  /ewc points   -- catalogued drop spots for this zone")
+    ns.Print("  /ewc route    -- the rotation: what to fly to and when to leave")
+    ns.Print("  /ewc travel   -- capital-to-zone flight times used by the route")
     ns.Print("  /ewc timers   -- tracked crate timers")
     ns.Print("  /ewc interval -- measured gaps between drops, per zone")
     ns.Print("  /ewc shard    -- cross-check the shard number against a creature GUID")
@@ -266,7 +330,7 @@ end
 SLASH_EASYWARCRATES1 = "/ewc"
 SLASH_EASYWARCRATES2 = "/easywarcrates"
 SlashCmdList.EASYWARCRATES = function(msg)
-    local cmd = (msg or ""):lower():match("^%s*(%S*)")
-    local handler = HANDLERS[cmd] or (cmd == "" and HANDLERS.status) or HANDLERS.help
-    handler()
+    local cmd, rest = tostring(msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
+    local handler = HANDLERS[cmd:lower()] or (cmd == "" and HANDLERS.status) or HANDLERS.help
+    handler(rest)
 end

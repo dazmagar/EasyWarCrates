@@ -10,3 +10,10 @@ ns.ADDON = ADDON
 ns.PCT = 0.01
 
 ns.version = "0.1.0"
+
+-- M:SS for a countdown, or "--" when there is nothing to count.
+function ns.FormatClock(seconds)
+    if type(seconds) ~= "number" then return "--" end
+    local s = math.max(0, math.floor(seconds + 0.5))
+    return string.format("%d:%02d", math.floor(s / 60), s % 60)
+end

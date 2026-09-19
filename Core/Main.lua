@@ -10,6 +10,8 @@ local DEFAULTS = {
     crates    = nil,    -- filled with ns.Timers.New()
     learned   = nil,    -- drop spots the shipped catalogue does not have
     gaps      = nil,    -- observed intervals between drops
+    travel    = nil,    -- per-zone capital-to-zone overrides
+    route     = nil,    -- the rotation, as zone ids in order
 }
 
 local PREFIX = "|cff33ddaa[EWC]|r "
@@ -35,6 +37,8 @@ local function applyDefaults(db)
     db.crates  = db.crates or ns.Timers.New()
     db.learned = db.learned or {}
     db.gaps    = db.gaps or {}
+    db.travel  = db.travel or {}
+    db.route   = db.route or {}
     return db
 end
 

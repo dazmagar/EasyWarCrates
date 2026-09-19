@@ -15,13 +15,29 @@ local ADDON, ns = ...
 -- abbr is what crate farmers actually say, and what the route editor accepts as
 -- input. Taken from WarCrateTracker (MIT, Copyright 2024 Samuel Colburn), which
 -- carries the same set minus its "MID:" prefix.
+--
+-- travel is seconds from the capital to a drop point in that zone, which is the
+-- number the rotation planner needs. Silvermoon has portals to Harandar,
+-- Voidstorm and Coiled Isle; Eversong and Zul'Aman are reached by mount, and
+-- Eversong is the odd one out because Silvermoon sits inside it.
+--
+-- These are estimates, and coarse on purpose. The spread WITHIN a zone -- which
+-- of its drop points the crate picks, relative to where the portal puts you --
+-- is about as large as the spread between zones, so a precise per-zone figure
+-- would be false precision. Nothing observed goes past two minutes.
+--
+-- Erring low is deliberate. Overstating travel makes the planner call a
+-- reachable drop "missed" and the player skips a crate they would have caught;
+-- understating it sends them on a flight they were going to make anyway, and
+-- Route's grace period absorbs arriving a little late. /ewc travel overrides
+-- any of these per zone.
 local ZONES = {
-    [2395] = { name = "Eversong Woods",  abbr = "EW", interval = 1100 },
-    [2405] = { name = "Voidstorm",       abbr = "VS", interval = 1100 },
-    [2413] = { name = "Harandar",        abbr = "Hd", interval = 1100 },
-    [2437] = { name = "Zul'Aman",        abbr = "ZA", interval = 1100 },
-    [2444] = { name = "Slayer's Rise",   abbr = "SR", interval = 1100 },
-    [2512] = { name = "The Coiled Isle", abbr = "CI", interval = 1100 },
+    [2395] = { name = "Eversong Woods",  abbr = "EW", interval = 1100, travel = 45 },
+    [2405] = { name = "Voidstorm",       abbr = "VS", interval = 1100, travel = 75 },
+    [2413] = { name = "Harandar",        abbr = "Hd", interval = 1100, travel = 75 },
+    [2437] = { name = "Zul'Aman",        abbr = "ZA", interval = 1100, travel = 90 },
+    [2444] = { name = "Slayer's Rise",   abbr = "SR", interval = 1100, travel = 90 },
+    [2512] = { name = "The Coiled Isle", abbr = "CI", interval = 1100, travel = 75 },
 }
 
 -- Spellings a player might reasonably type for a zone. Deliberately forgiving:
@@ -73,6 +89,15 @@ end
 function ns.GetZoneInterval(zoneID)
     local z = ZONES[zoneID]
     return z and z.interval or 1100
+end
+
+-- Seconds from the capital to a drop point here. A value the player has set
+-- wins over the shipped estimate, which is what the estimates are for.
+function ns.GetZoneTravel(zoneID)
+    local override = ns.db and ns.db.travel and ns.db.travel[zoneID]
+    if override then return override end
+    local z = ZONES[zoneID]
+    return z and z.travel or 90
 end
 
 function ns.GetZoneName(zoneID)
