@@ -98,9 +98,12 @@ end
 --             cross-track slope over speed. Predict sizes its tolerances off
 --             this, so a noisy track demands more separation before it commits
 --   rms       cross-track residual; large means the transport is turning
+-- Returns nil plus a reason when it cannot fit. The reason matters: a readout
+-- that says "not enough samples" while holding thirty-five of them is telling
+-- the player something false about what the transport is doing.
 function Track:Fit()
     local n = self:Count()
-    if n < MIN_SAMPLES then return nil end
+    if n < MIN_SAMPLES then return nil, "samples" end
 
     local h, tl = self.head, self.tail
     local st, sx, sy = 0, 0, 0
@@ -116,16 +119,19 @@ function Track:Fit()
         stx = stx + dt * (self.x[i] - mx)
         sty = sty + dt * (self.y[i] - my)
     end
-    if stt <= 0 then return nil end
+    if stt <= 0 then return nil, "samples" end
 
     local vx, vy = stx / stt, sty / stt
     local speed = math.sqrt(vx * vx + vy * vy)
-    if speed <= 0 then return nil end
+    if speed <= 0 then return nil, "still" end
     local hx, hy = vx / speed, vy / speed
 
     local bx, by = self.x[tl] - self.x[h], self.y[tl] - self.y[h]
     local baseline = math.sqrt(bx * bx + by * by)
-    if baseline < MIN_BASELINE then return nil end
+    -- Enough readings, but they are all in the same place: the transport has
+    -- reached its drop point and is circling. Not a shortage of data, a
+    -- shortage of movement, and the two look nothing alike to a player.
+    if baseline < MIN_BASELINE then return nil, "still" end
 
     local sq = 0
     for i = h, tl do

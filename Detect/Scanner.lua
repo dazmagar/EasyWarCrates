@@ -187,7 +187,8 @@ function Scanner.Narrate(now)
     if not (ns.db and ns.db.watch) then return end
 
     for _, tr in pairs(tracks) do
-        local fit = tr.track:Fit()
+        local fit, why = tr.track:Fit()
+        if fit then tr.everFit = true end
         local state, line
         if not fit then
             -- The waiting line belongs to acquiring a track, said once per
@@ -197,7 +198,11 @@ function Scanner.Narrate(now)
             -- live transport otherwise alternates COMMIT with "not enough
             -- samples" every few seconds, which was half the log.
             local n = tr.track:Count()
-            if not tr.everFit and n >= (tr.peak or 0) then
+            if why == "still" then
+                state = "still"
+                line = ("|cff777777%d samples, but it has stopped moving -- circling its drop point|r")
+                    :format(n)
+            elseif not tr.everFit and n >= (tr.peak or 0) then
                 tr.peak = n
                 state = "wait:" .. n
                 line = ("|cff777777tracking|r %d sample%s, not enough to fit yet"):format(
@@ -211,7 +216,6 @@ function Scanner.Narrate(now)
             line = ("|cff777777n=%d span=%.1fs|r  %s -> %s"):format(fit.n, fit.span,
                 tr.arrived and "|cff77dd77ARRIVED|r" or "|cff33ff99COMMIT|r", where)
         else
-            tr.everFit = true
             local r = ns.Predict.Evaluate(ns.GetDropPoints(tr.zoneID), fit)
             local where = r.best and ("%.1f,%.1f"):format(r.best.spot.x * 100, r.best.spot.y * 100) or "-"
             state = ("%d:%s:%s"):format(fit.n, r.ok and "ok" or tostring(r.reason), where)

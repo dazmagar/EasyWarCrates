@@ -31,11 +31,26 @@ t.test("a track too short to mean anything reports nothing", function()
     t.eq(tr:Fit(), nil)
 end)
 
-t.test("enough samples but no distance covered still reports nothing", function()
+-- The two ways a fit can be refused look identical to a player unless they are
+-- named. A live flight held thirty-five samples and reported "not enough
+-- samples" because the transport had reached its drop point and begun
+-- circling, which is a shortage of movement and not of data.
+t.test("enough samples but no distance covered says so, and says why", function()
     local tr = Heading.NewTrack("b")
     -- Crawling: 20 samples that together cover far less than MIN_BASELINE.
     for i = 0, 19 do tr:Add(1000 + i, 0.5 + i * 0.0001, 0.5) end
-    t.eq(tr:Fit(), nil, "a baseline under MIN_BASELINE has no usable direction")
+    local fit, why = tr:Fit()
+    t.eq(fit, nil, "a baseline under MIN_BASELINE has no usable direction")
+    t.eq(why, "still", "and the reason is that it is not moving, not that it is unseen")
+end)
+
+t.test("too few samples is reported as too few samples", function()
+    local tr = Heading.NewTrack("b2")
+    tr:Add(1000, 0.2, 0.5)
+    tr:Add(1001, 0.3, 0.5)
+    local fit, why = tr:Fit()
+    t.eq(fit, nil)
+    t.eq(why, "samples")
 end)
 
 t.test("a clean straight run recovers heading and speed exactly", function()
