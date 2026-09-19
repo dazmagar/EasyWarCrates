@@ -68,6 +68,14 @@ local releaseLag = {}
 -- around rather than something that silently inflates a mean.
 local fallAtlas, atlasFlip = {}, {}
 
+-- When this zone was last swept, and which crates were falling in it then.
+-- Together they answer the only question that matters for a descent reading:
+-- did we watch this fall BEGIN. A parachute present in the first sweep of a
+-- zone was already in the air before we arrived.
+local lastSweepAt, lastFalling = {}, {}
+-- A previous sweep older than this is not evidence of having been watching.
+local SWEEP_FRESH = 60
+
 -- A parachute older than this cannot belong to the landing being timed. Longer
 -- than any descent observed, shorter than the gap between drops.
 local DESCENT_PAIR_MAX = 300
@@ -183,6 +191,7 @@ function Scanner.Reset()
     partialFall = {}
     releaseLag = {}
     fallAtlas, atlasFlip = {}, {}
+    lastSweepAt, lastFalling = {}, {}
     liveCrate = {}
     stopPolling()
 end
@@ -386,6 +395,9 @@ function Scanner.OnVignettesUpdated()
         end
     end
 
+    local prevSweepAt, prevFalling = lastSweepAt[zoneID], lastFalling[zoneID] or {}
+    lastSweepAt[zoneID], lastFalling[zoneID] = tNow, fallingNow
+
     for _, guid in ipairs(guids) do
         local info = C_VignetteInfo.GetVignetteInfo(guid)
         local stage = info and ns.VignetteStage(info.vignetteID)
@@ -419,26 +431,6 @@ function Scanner.OnVignettesUpdated()
                     startPolling()
                     Scanner.Evaluate(zoneID, tr)
                 else
-                    -- Whether we watched the transport ARRIVE at its drop
-                    -- point, captured before the track is torn down. A descent
-                    -- timed from a parachute we only joined partway through is
-                    -- a lower bound, not a measurement, and averaging it with
-                    -- real ones drags the figure down.
-                    --
-                    -- The test used to be "is a track open in this zone",
-                    -- which is not the same thing and let a 19-second reading
-                    -- into Harandar's mean against a true 86. A transport
-                    -- keeps circling after it drops, so someone flying into a
-                    -- zone mid-fall sees it, opens a fresh track, and their
-                    -- fragment of a fall counts as a whole one. The guard that
-                    -- suppresses those tracks keys off recentDrop, which is
-                    -- only set once a crate has been seen -- so on the first
-                    -- sweep after entering a zone it comes down to whether the
-                    -- transport's vignette happens to be listed before the
-                    -- crate's, which is why it did not happen every time.
-                    local watching = tracks[zoneID]
-                    local sawItDrop = watching ~= nil and watching.arrived or nil
-
                     -- The crate is down, or on its way down. Its own position
                     -- is the answer, so every guess about this zone is now
                     -- worthless -- including the transport's.
@@ -474,12 +466,27 @@ function Scanner.OnVignettesUpdated()
 
                         if stage == "falling" then
                             if not fallingSince[key] then
+                                -- We watched this fall begin only if we had
+                                -- already swept this zone recently and this
+                                -- parachute was not in it then.
+                                --
+                                -- Two earlier tests failed here. "Is a track
+                                -- open in this zone" counted a fragment as a
+                                -- whole fall, because a transport keeps
+                                -- circling after it drops and someone flying
+                                -- in mid-fall opens a fresh track on it. "Did
+                                -- that track reach its drop point" then threw
+                                -- away perfectly good readings, including
+                                -- Voidstorm's 86s -- the most accurate figure
+                                -- in the set -- because arrival needs a live
+                                -- heading fit and a transport circling its
+                                -- point has no baseline to fit.
+                                local sawItStart = prevSweepAt
+                                    and (stamp - prevSweepAt) <= SWEEP_FRESH
+                                    and not prevFalling[key] or nil
                                 fallingSince[key] = stamp
-                                partialFall[key] = not sawItDrop or nil
-                                -- Only meaningful when we watched the arrival;
-                                -- a stale one from an earlier crate would be a
-                                -- fiction, and sawItDrop is exactly that test.
-                                releaseLag[key] = sawItDrop and arrivedAt[zoneID]
+                                partialFall[key] = not sawItStart or nil
+                                releaseLag[key] = sawItStart and arrivedAt[zoneID]
                                     and (stamp - arrivedAt[zoneID]) or nil
                                 fallAtlas[key] = info.atlasName
                             elseif fallAtlas[key] and not atlasFlip[key]
@@ -488,15 +495,15 @@ function Scanner.OnVignettesUpdated()
                             end
                         elseif stage == "ground" and fallingSince[key] then
                             local secs = stamp - fallingSince[key]
+                            local flip = atlasFlip[key] and (atlasFlip[key] - fallingSince[key]) or nil
                             fallingSince[key] = nil
                             local overlapped, partial = fallingNow[key], partialFall[key]
                             local lag = releaseLag[key]
-                            local flip = atlasFlip[key] and (atlasFlip[key] - fallingSince[key]) or nil
                             partialFall[key], releaseLag[key] = nil, nil
                             fallAtlas[key], atlasFlip[key] = nil, nil
                             if secs <= DESCENT_PAIR_MAX
                                 and ns.Airtime.NoteDescent(db.descent, zoneID, secs, overlapped, pos, partial, lag, flip) then
-                                ns.OnDescentMeasured(zoneID, secs, overlapped, partial)
+                                ns.OnDescentMeasured(zoneID, secs, partial)
                             end
                         elseif stage == "claimed" then
                             fallingSince[key], partialFall[key] = nil, nil
