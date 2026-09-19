@@ -5,13 +5,18 @@ local ADDON, ns = ...
 -- catalogues them, but they are not the target yet; adding one here is all it
 -- takes to turn it on.
 --
--- interval is seconds between drops on a given shard. 1100 across the board:
--- CrateTrackerZK ships exactly that for every 11.0 and 12.0 zone, RCT's
--- hand-tuned 1091-1100 spread sits inside the same band, and HGLog only ever
--- accepts an observed gap in 1090-1105. Nobody has pinned it finer than that,
--- so a per-zone table would be recording measurement noise as fact. The real
--- fix is to learn it per shard from consecutive drops, which Track/Timers.lua
--- now does -- these stay as the figure to fall back on until it has.
+-- interval is a FALLBACK, used only until a zone has been measured. 1100
+-- across the board because that is what CrateTrackerZK ships for every 11.0
+-- and 12.0 zone, with RCT's hand-tuned 1091-1100 inside the same band.
+--
+-- Measurement says otherwise. Harandar has been timed twice, once across four
+-- drops and once across one, agreeing at 1086 and 1085; Voidstorm came out at
+-- 1097 across four. So the figure everyone ships is not right, and the gap
+-- between those two zones says it may not even be one figure. Assuming 1100
+-- where the truth is 1086 puts the countdown a minute out over four cycles.
+--
+-- Hardcoding those numbers here would be the same mistake with better inputs.
+-- GetZoneInterval prefers what this client has actually observed.
 --
 -- abbr is what crate farmers actually say, and what the route editor accepts as
 -- input. Taken from WarCrateTracker (MIT, Copyright 2024 Samuel Colburn), which
@@ -87,9 +92,30 @@ function ns.GetZone(zoneID)
     return ZONES[zoneID]
 end
 
+-- Enough cycles of evidence to prefer what was measured here over what was
+-- shipped. A single one-cycle reading carries the whole detection error at
+-- both ends; three is where the readings started agreeing with each other.
+local MEASURED_MIN_CYCLES = 3
+
+-- The shipped figure is a fallback now, not the answer.
+--
+-- Harandar has been measured twice -- once across four drops, once across one
+-- -- and they agree at 1085 and 1086. Voidstorm measured 1097 across four.
+-- Neither is the 1100 every addon ships, and the eleven seconds between them
+-- suggests the interval is not even the same everywhere. Over four cycles,
+-- assuming 1100 in a zone that runs 1086 puts the countdown almost a minute out.
 function ns.GetZoneInterval(zoneID)
-    local z = ZONES[zoneID]
-    return z and z.interval or 1100
+    local shipped = ZONES[zoneID] and ZONES[zoneID].interval or 1100
+    if not (ns.db and ns.db.gaps and ns.Timers) then return shipped end
+    local n, mean, _, _, cycles = ns.Timers.GapStats(ns.db.gaps, zoneID)
+    if n and cycles and cycles >= MEASURED_MIN_CYCLES then
+        return mean
+    end
+    return shipped
+end
+
+function ns.GetShippedInterval(zoneID)
+    return ZONES[zoneID] and ZONES[zoneID].interval or 1100
 end
 
 -- Seconds from the capital to a drop point here. A value the player has set

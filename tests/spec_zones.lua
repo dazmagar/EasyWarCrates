@@ -118,3 +118,34 @@ t.test("every tracked zone has drop points catalogued", function()
         t.ok(z.interval > 0, z.name .. " needs an interval")
     end
 end)
+
+-- The shipped interval is a fallback. Measured live, Harandar runs 1085-1086
+-- and Voidstorm 1097, against the 1100 every addon ships -- so a zone that has
+-- been timed enough should trust itself over the table.
+t.test("a measured interval replaces the shipped one", function()
+    ns.db = { gaps = {} }
+    t.eq(ns.GetZoneInterval(2413), ns.GetShippedInterval(2413), "nothing measured, use the table")
+
+    -- One cycle is not enough: it carries the whole detection error at both ends.
+    ns.Timers.NoteGap(ns.db.gaps, 2413, 1085, 1100)
+    t.eq(ns.GetZoneInterval(2413), ns.GetShippedInterval(2413), "one cycle still falls back")
+
+    -- A four-cycle reading alongside it is.
+    ns.Timers.NoteGap(ns.db.gaps, 2413, 4344, 1100)
+    local used = ns.GetZoneInterval(2413)
+    t.ok(used < ns.GetShippedInterval(2413), "measured evidence should now win")
+    t.near(used, (1085 + 4344) / 5, 1e-9, "weighted by cycles, not averaged")
+    ns.db = nil
+end)
+
+t.test("a zone measured elsewhere does not affect this one", function()
+    ns.db = { gaps = {} }
+    ns.Timers.NoteGap(ns.db.gaps, 2413, 4344, 1100)
+    t.eq(ns.GetZoneInterval(2405), ns.GetShippedInterval(2405))
+    ns.db = nil
+end)
+
+t.test("with no database at all the shipped figure is used", function()
+    ns.db = nil
+    t.eq(ns.GetZoneInterval(2413), 1100)
+end)

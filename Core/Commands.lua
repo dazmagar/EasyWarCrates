@@ -265,11 +265,16 @@ HANDLERS.interval = function()
         local list = (ns.db.gaps or {})[zoneID]
         if list and #list > 0 then
             any = true
-            local n, mean, lo, hi = ns.Timers.GapStats(ns.db.gaps, zoneID)
-            ns.Print(("%s |cff777777(shipped %ds)|r  %d observation%s, mean |cffffd100%ds|r, range %d-%d"):format(
-                ns.GetZoneName(zoneID), ns.GetZoneInterval(zoneID),
-                n, n == 1 and "" or "s",
+            local n, mean, lo, hi, cycles = ns.Timers.GapStats(ns.db.gaps, zoneID)
+            local inUse = ns.GetZoneInterval(zoneID)
+            ns.Print(("%s  %d observation%s over %d cycle%s, mean |cffffd100%ds|r, range %d-%d"):format(
+                ns.GetZoneName(zoneID), n, n == 1 and "" or "s",
+                cycles, cycles == 1 and "" or "s",
                 math.floor(mean + 0.5), math.floor(lo + 0.5), math.floor(hi + 0.5)))
+            ns.Print(("   |cff777777shipped %ds; using %s%ds|r"):format(
+                ns.GetShippedInterval(zoneID),
+                math.abs(inUse - ns.GetShippedInterval(zoneID)) > 0.5 and "|cff33ff99measured " or "shipped ",
+                math.floor(inUse + 0.5)))
             for _, g in ipairs(list) do
                 ns.Print(("   %ds%s"):format(math.floor(g.gap + 0.5),
                     g.cycles > 1 and (" over %d cycles = %ds each"):format(
