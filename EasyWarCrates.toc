@@ -1,0 +1,26 @@
+## Interface: 120100
+## Title: EasyWarCrates
+## Notes: Tracks War Supply Crate drops and predicts where the transport is headed.
+## Version: 0.1.0
+## SavedVariables: EasyWarCratesDB
+
+# Data and logic. Everything down to Track/Timers.lua loads under a plain Lua
+# interpreter as well: the WoW calls these make are injected or sit inside
+# function bodies, never at load. tests/run.py loads this same set, in order.
+Core/Init.lua
+Data/Zones.lua
+Data/DropPoints.lua
+Data/Vignettes.lua
+Core/Zones.lua
+Detect/Shard.lua
+Detect/Heading.lua
+Detect/Predict.lua
+Track/Timers.lua
+Track/Learn.lua
+
+# Below here the files create frames and register events at load, so they only
+# run in game. Kept deliberately thin -- they move numbers between the game and
+# the modules above, and hold no logic of their own.
+Detect/Scanner.lua
+Core/Main.lua
+Core/Commands.lua

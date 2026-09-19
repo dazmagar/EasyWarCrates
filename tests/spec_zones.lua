@@ -1,0 +1,97 @@
+local ns, t = ...
+local Zones = ns.Zones
+
+-- A stand-in for the Midnight map tree. mapType 3 is Zone, 4 is Dungeon.
+local TREE = {
+    [113]  = { mapID = 113,  parentMapID = 0,    mapType = 2 },  -- Azeroth
+    [2537] = { mapID = 2537, parentMapID = 113,  mapType = 2 },  -- Quel'thalas, continent
+    [2395] = { mapID = 2395, parentMapID = 2537, mapType = 3 },  -- Eversong Woods
+    [2437] = { mapID = 2437, parentMapID = 2537, mapType = 3 },  -- Zul'Aman
+    [2393] = { mapID = 2393, parentMapID = 2395, mapType = 3 },  -- Silvermoon City
+    [9001] = { mapID = 9001, parentMapID = 2395, mapType = 4 },  -- a delve in Eversong
+    [9002] = { mapID = 9002, parentMapID = 2393, mapType = 4 },  -- a building in Silvermoon
+    [9500] = { mapID = 9500, parentMapID = 0,    mapType = 4 },  -- orphan
+}
+
+local calls
+local function getInfo(id)
+    calls = calls + 1
+    return TREE[id]
+end
+local function fresh() calls = 0 end
+
+t.test("a tracked zone resolves without consulting the map tree", function()
+    fresh()
+    t.eq(Zones.Normalize(2395, getInfo), 2395)
+    t.eq(calls, 0, "the hot path runs on every vignette scan; it must not call the API")
+end)
+
+t.test("every Midnight zone resolves to itself", function()
+    for zoneID in pairs(ns.ZONES) do
+        t.eq(Zones.Normalize(zoneID, getInfo), zoneID, "zone " .. zoneID)
+    end
+end)
+
+-- The bug this whole design avoids. RCT keeps walking past the first Zone-type
+-- map and takes the outermost, so standing in Silvermoon registers as standing
+-- in Eversong Woods -- a zone where crates really do drop, on a shard reading
+-- taken inside a sanctuary.
+t.test("Silvermoon City does not become Eversong Woods", function()
+    t.eq(Zones.Normalize(2393, getInfo), nil,
+        "a sanctuary city is its own Zone-type map and simply is not tracked")
+end)
+
+t.test("somewhere inside Silvermoon does not become Eversong Woods either", function()
+    t.eq(Zones.Normalize(9002, getInfo), nil)
+end)
+
+t.test("a delve inside a tracked zone resolves to that zone", function()
+    t.eq(Zones.Normalize(9001, getInfo), 2395,
+        "a non-Zone map should walk up to the zone containing it")
+end)
+
+t.test("the continent above the zones is not itself a crate zone", function()
+    t.eq(Zones.Normalize(2537, getInfo), nil,
+        "Quel'thalas is Eversong/Zul'Aman/Coiled Isle's parent, not a zone RCT should track")
+end)
+
+t.test("GUID-embedded ids alias onto the real zone", function()
+    t.eq(Zones.Normalize(3135, getInfo), 2512, "Coiled Isle as it appears inside GUIDs")
+    t.eq(Zones.Normalize(2536, getInfo), 2437, "second map id for Zul'Aman")
+end)
+
+t.test("an unknown map is refused rather than guessed at", function()
+    t.eq(Zones.Normalize(9500, getInfo), nil, "orphan map")
+    t.eq(Zones.Normalize(424242, getInfo), nil, "map the tree has never heard of")
+end)
+
+t.test("junk input is refused without throwing", function()
+    t.eq(Zones.Normalize(nil, getInfo), nil)
+    t.eq(Zones.Normalize("", getInfo), nil)
+    t.eq(Zones.Normalize({}, getInfo), nil)
+    t.eq(Zones.Normalize("2395", getInfo), 2395, "a numeric string is still a map id")
+end)
+
+t.test("a cycle in the map tree terminates", function()
+    local loop = {
+        [1] = { mapID = 1, parentMapID = 2, mapType = 4 },
+        [2] = { mapID = 2, parentMapID = 1, mapType = 4 },
+    }
+    t.eq(Zones.Normalize(1, function(id) return loop[id] end), nil,
+        "a malformed tree must not hang the client")
+end)
+
+t.test("IsTracked agrees with the zone table", function()
+    t.ok(Zones.IsTracked(2444))
+    t.notOk(Zones.IsTracked(2393))
+    t.notOk(Zones.IsTracked(2537), "Quel'thalas is not a crate zone")
+    t.notOk(Zones.IsTracked(nil))
+end)
+
+t.test("every tracked zone has drop points catalogued", function()
+    for zoneID, z in pairs(ns.ZONES) do
+        local spots = ns.ShippedDropPoints(zoneID)
+        t.ok(spots and #spots > 0, z.name .. " has no drop points, so prediction there is dead")
+        t.ok(z.interval > 0, z.name .. " needs an interval")
+    end
+end)

@@ -1,0 +1,106 @@
+local ADDON, ns = ...
+
+local DEFAULTS = {
+    enabled   = true,
+    waypoint  = true,   -- drop a map pin on a confident prediction
+    verbose   = false,  -- narrate every scan; for diagnosing, not for playing
+    -- On by default at 0.1.0 on purpose. Until a transport has actually been
+    -- watched, an addon that only speaks when it is confident is
+    -- indistinguishable from one that never saw the plane.
+    watch     = true,
+    crates    = nil,    -- filled with ns.Timers.New()
+    learned   = nil,    -- drop spots the shipped catalogue does not have
+}
+
+local PREFIX = "|cff33ddaa[EWC]|r "
+
+function ns.Print(...)
+    print(PREFIX .. string.join(" ", tostringall(...)))
+end
+
+function ns.Debug(...)
+    if ns.db and ns.db.verbose then
+        print("|cff777777[EWC]|r " .. string.join(" ", tostringall(...)))
+    end
+end
+
+local function applyDefaults(db)
+    for k, v in pairs(DEFAULTS) do
+        if db[k] == nil and v ~= nil then db[k] = v end
+    end
+    -- Listed as nil in DEFAULTS above, which means the key does not exist in
+    -- that table at all and the loop never sees it. Seeded explicitly, and
+    -- every one of these has to be: a missing store is not an error anywhere
+    -- downstream, it is a module that quietly stops working.
+    db.crates  = db.crates or ns.Timers.New()
+    db.learned = db.learned or {}
+    return db
+end
+
+-- What each zone was last told to expect, so a landing can be scored against
+-- it. Neither RCT nor WarCrateTracker ever checks its own guess; CrateTrackerZK
+-- does, and it is the only way to find out whether the model is actually any
+-- good rather than merely plausible.
+ns.lastPrediction = {}
+local PREDICTION_MEMORY = 600  -- a guess older than this is not about this crate
+
+-- Called by the scanner when a crate's own vignette pins it down. This is the
+-- truth the prediction was only guessing at.
+function ns.OnCrateRecorded(zoneID, shardID, stage, pos)
+    ns.Print(string.format("%s |cffffffffshard %s|r -- crate %s at |cffffd100%.1f, %.1f|r",
+        ns.GetZoneName(zoneID), tostring(shardID), stage, pos.x * 100, pos.y * 100))
+
+    local guess = ns.lastPrediction[zoneID]
+    if guess and (GetServerTime() - guess.at) <= PREDICTION_MEMORY then
+        local dx, dy = guess.x - pos.x, guess.y - pos.y
+        local miss = math.sqrt(dx * dx + dy * dy) * 100
+        local colour = miss <= 1 and "|cff33ff99" or (miss <= 3 and "|cffffd100" or "|cffff5555")
+        ns.Print(string.format("  predicted %.1f, %.1f -- %smissed by %.2f%% of map|r",
+            guess.x * 100, guess.y * 100, colour, miss))
+        ns.lastPrediction[zoneID] = nil
+    end
+
+    -- Only a landed crate says where crates land. A parachute position is
+    -- somewhere it was passing over.
+    if not ns.LANDED_STAGE[stage] then return end
+
+    local verdict = ns.Learn.Note(ns.db.learned, zoneID, pos.x, pos.y)
+    if verdict == "learned" then
+        ns.Print(string.format(
+            "  |cff33ff99new drop spot learned|r -- %.1f, %.1f was not in the catalogue",
+            pos.x * 100, pos.y * 100))
+    elseif verdict == "reinforced" then
+        ns.Print("  |cff777777confirms a spot you learned earlier|r")
+    elseif verdict == "full" then
+        ns.Print("  |cffff8800this zone has hit its learned-spot cap|r")
+    elseif verdict == "invalid" then
+        -- Never silent. "invalid" means the store or the coordinates were not
+        -- what Learn expects, which is a bug on this side, not a bad crate.
+        ns.Print(("  |cffff5555could not record this spot|r (store=%s, %.4f %.4f)"):format(
+            type(ns.db.learned), pos.x, pos.y))
+    end
+end
+
+-- Called when a transport's heading has settled on one spot.
+function ns.OnPrediction(zoneID, result, fit)
+    local s = result.best.spot
+    ns.lastPrediction[zoneID] = { x = s.x, y = s.y, at = GetServerTime() }
+    ns.Print(string.format(
+        "incoming to |cffffd100%.1f, %.1f|r in %s  |cff777777(%.1f deg off, %d samples, err %.2f deg)|r",
+        s.x * 100, s.y * 100, ns.GetZoneName(zoneID),
+        math.deg(math.atan(result.best.tan)), fit.n, math.deg(fit.err)))
+
+    if ns.db.waypoint and C_Map.CanSetUserWaypoint(zoneID) then
+        C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(zoneID, s.x, s.y))
+        C_SuperTrack.SetSuperTrackedUserWaypoint(true)
+    end
+end
+
+local frame = CreateFrame("Frame")
+frame:RegisterEvent("ADDON_LOADED")
+frame:SetScript("OnEvent", function(_, event, name)
+    if event ~= "ADDON_LOADED" or name ~= ADDON then return end
+    EasyWarCratesDB = applyDefaults(EasyWarCratesDB or {})
+    ns.db = EasyWarCratesDB
+    ns.Print("v" .. ns.version .. " loaded. |cffffffff/ewc|r for commands.")
+end)
