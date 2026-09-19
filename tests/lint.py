@@ -57,6 +57,7 @@ def check_file(path: pathlib.Path) -> list[str]:
             declared[name] = min(declared.get(name, ln), ln)
 
     problems = []
+    problems += mixed_clocks(path, stripped)
     for m in CALL.finditer(stripped):
         name = m.group(1)
         if name not in declared:
@@ -66,6 +67,77 @@ def check_file(path: pathlib.Path) -> list[str]:
             problems.append(
                 f"{path.name}:{ln} calls '{name}', but its local is declared at "
                 f"line {declared[name]} -- this reads a nil global at runtime"
+            )
+    return problems
+
+
+CLOCKS = ("tNow", "stamp")
+ASSIGN = re.compile(r"^\s*(?:local\s+)?([^=\n]+?)\s*=(?![=])\s*(.+)$", re.M)
+TABLE_READ = re.compile(r"^(\w+)\[")
+CLOCK_USE = re.compile(r"\b(tNow|stamp)\s*-\s*\(?\s*(\w+)")
+
+
+def split_commas(s: str) -> list[str]:
+    """Top-level comma split: a[i], b[j] must not break inside the brackets."""
+    out, depth, cur = [], 0, ""
+    for ch in s:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            out.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+    out.append(cur.strip())
+    return out
+
+
+def mixed_clocks(path: pathlib.Path, stripped: str) -> list[str]:
+    """Subtracting a game-uptime reading from a unix timestamp.
+
+    Detect/Scanner.lua carries two clocks: GetTime() as tNow, seconds since the
+    client started, and GetServerTime() as stamp, a unix timestamp. Both are
+    plain numbers, so mixing them is silent. It happened: a sweep marker was
+    stored as tNow and compared against stamp, which put about 1.7 billion
+    between them, so the test it guarded was never satisfied and every descent
+    reading in every zone came out flagged as a fragment.
+
+    Nothing in the suite can see that file -- it is all game API -- so its only
+    check was a player noticing in a log. This is cheaper.
+
+    Clocks propagate: through multiple assignment, which is how the mistake was
+    actually written, and on into the locals that read those tables, which is
+    where the comparison sat. The first two versions of this rule handled
+    neither and were green against the live bug.
+    """
+    holds: dict[str, str] = {}
+    for _ in range(3):        # a few passes, so order in the file does not matter
+        for m in ASSIGN.finditer(stripped):
+            names = split_commas(m.group(1))
+            values = split_commas(m.group(2))
+            for name, value in zip(names, values):
+                target = TABLE_READ.match(name)
+                key = target.group(1) if target else name.strip()
+                if not key.isidentifier():
+                    continue
+                if value in CLOCKS:
+                    holds[key] = value
+                    continue
+                src = TABLE_READ.match(value)
+                if src and src.group(1) in holds:
+                    holds[key] = holds[src.group(1)]
+                elif value in holds:
+                    holds[key] = holds[value]
+
+    problems = []
+    for m in CLOCK_USE.finditer(stripped):
+        clock, name = m.group(1), m.group(2)
+        if holds.get(name) and holds[name] != clock:
+            problems.append(
+                f"{path.name}:{line_of(stripped, m.start())} subtracts '{name}', "
+                f"which holds {holds[name]}, from {clock} -- different clocks"
             )
     return problems
 

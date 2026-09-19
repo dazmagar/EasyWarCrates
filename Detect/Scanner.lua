@@ -68,11 +68,15 @@ local releaseLag = {}
 -- around rather than something that silently inflates a mean.
 local fallAtlas, atlasFlip = {}, {}
 
--- When this zone was last swept, and which crates were falling in it then.
+-- When this zone was last swept, in SERVER time, and which crates were falling
+-- in it then. Server time because that is what the vignette stamps use, and
+-- this held GetTime() for one build: the comparison was then between seconds
+-- since the client started and a unix timestamp, so it was never satisfied and
+-- every descent in every zone came out flagged as a fragment.
 -- Together they answer the only question that matters for a descent reading:
 -- did we watch this fall BEGIN. A parachute present in the first sweep of a
 -- zone was already in the air before we arrived.
-local lastSweepAt, lastFalling = {}, {}
+local lastSweptStamp, lastFalling = {}, {}
 -- A previous sweep older than this is not evidence of having been watching.
 local SWEEP_FRESH = 60
 
@@ -191,7 +195,7 @@ function Scanner.Reset()
     partialFall = {}
     releaseLag = {}
     fallAtlas, atlasFlip = {}, {}
-    lastSweepAt, lastFalling = {}, {}
+    lastSweptStamp, lastFalling = {}, {}
     liveCrate = {}
     stopPolling()
 end
@@ -395,8 +399,8 @@ function Scanner.OnVignettesUpdated()
         end
     end
 
-    local prevSweepAt, prevFalling = lastSweepAt[zoneID], lastFalling[zoneID] or {}
-    lastSweepAt[zoneID], lastFalling[zoneID] = tNow, fallingNow
+    local prevSweep, prevFalling = lastSweptStamp[zoneID], lastFalling[zoneID] or {}
+    lastSweptStamp[zoneID], lastFalling[zoneID] = stamp, fallingNow
 
     for _, guid in ipairs(guids) do
         local info = C_VignetteInfo.GetVignetteInfo(guid)
@@ -481,8 +485,8 @@ function Scanner.OnVignettesUpdated()
                                 -- in the set -- because arrival needs a live
                                 -- heading fit and a transport circling its
                                 -- point has no baseline to fit.
-                                local sawItStart = prevSweepAt
-                                    and (stamp - prevSweepAt) <= SWEEP_FRESH
+                                local sawItStart = prevSweep
+                                    and (stamp - prevSweep) <= SWEEP_FRESH
                                     and not prevFalling[key] or nil
                                 fallingSince[key] = stamp
                                 partialFall[key] = not sawItStart or nil
