@@ -60,6 +60,13 @@ local arrivedAt = {}
 -- Keys whose parachute was already in the air when we first saw it.
 local partialFall = {}
 local releaseLag = {}
+-- The art the parachute vignette was drawn with, and when it first changed.
+-- Dmitrii reports crates sitting on the ground with the parachute still shown
+-- for 30 to 54 seconds, which is the size of the unexplained excess in the
+-- long readings. If the art flips to the crate while the id stays 2967, the
+-- real landing moment is observable and the bug becomes something to measure
+-- around rather than something that silently inflates a mean.
+local fallAtlas, atlasFlip = {}, {}
 
 -- A parachute older than this cannot belong to the landing being timed. Longer
 -- than any descent observed, shorter than the gap between drops.
@@ -175,6 +182,7 @@ function Scanner.Reset()
     arrivedAt = {}
     partialFall = {}
     releaseLag = {}
+    fallAtlas, atlasFlip = {}, {}
     liveCrate = {}
     stopPolling()
 end
@@ -473,20 +481,26 @@ function Scanner.OnVignettesUpdated()
                                 -- fiction, and sawItDrop is exactly that test.
                                 releaseLag[key] = sawItDrop and arrivedAt[zoneID]
                                     and (stamp - arrivedAt[zoneID]) or nil
+                                fallAtlas[key] = info.atlasName
+                            elseif fallAtlas[key] and not atlasFlip[key]
+                                and info.atlasName and info.atlasName ~= fallAtlas[key] then
+                                atlasFlip[key] = stamp
                             end
                         elseif stage == "ground" and fallingSince[key] then
                             local secs = stamp - fallingSince[key]
                             fallingSince[key] = nil
                             local overlapped, partial = fallingNow[key], partialFall[key]
                             local lag = releaseLag[key]
+                            local flip = atlasFlip[key] and (atlasFlip[key] - fallingSince[key]) or nil
                             partialFall[key], releaseLag[key] = nil, nil
+                            fallAtlas[key], atlasFlip[key] = nil, nil
                             if secs <= DESCENT_PAIR_MAX
-                                and ns.Airtime.NoteDescent(db.descent, zoneID, secs, overlapped, pos, partial, lag) then
+                                and ns.Airtime.NoteDescent(db.descent, zoneID, secs, overlapped, pos, partial, lag, flip) then
                                 ns.OnDescentMeasured(zoneID, secs, overlapped, partial)
                             end
                         elseif stage == "claimed" then
                             fallingSince[key], partialFall[key] = nil, nil
-                            releaseLag[key] = nil
+                            releaseLag[key], fallAtlas[key], atlasFlip[key] = nil, nil, nil
                         end
 
                         local verdict, _, gap = ns.Timers.Record(db.crates, zoneID, shard, stamp, stage)

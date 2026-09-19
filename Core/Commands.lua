@@ -208,9 +208,10 @@ HANDLERS.airtime = function(rest)
             for i, d in ipairs(ns.Airtime.DescentSamples(ns.db.descent, zoneID) or {}) do
                 -- The overlap flag is not shown: it fired on 19 readings out
                 -- of 19, so it separates nothing. The release lag might.
-                ns.Print(("   %2d. %3ds  %s%s%s"):format(i, math.floor(d.secs + 0.5),
+                ns.Print(("   %2d. %3ds  %s%s%s%s"):format(i, math.floor(d.secs + 0.5),
                     d.x and ("|cff777777at %.1f, %.1f|r"):format(d.x, d.y) or "|cff777777spot not recorded|r",
                     d.lag and ("  |cff777777%ds circling first|r"):format(d.lag) or "",
+                    d.flip and ("  |cff33ff99art changed at %ds|r"):format(d.flip) or "",
                     d.partial and "  |cffff8800joined mid-fall, not counted|r" or ""))
             end
         else
