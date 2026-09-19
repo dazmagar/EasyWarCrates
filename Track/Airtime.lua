@@ -24,6 +24,23 @@ local ADDON, ns = ...
 local Airtime = {}
 ns.Airtime = Airtime
 
+-- The descent is measured from the crate's own on-ground vignette, and
+-- deliberately not inferred from the parachute vignette going away.
+--
+-- RCT infers it: if the parachute has not been seen for sixty seconds it
+-- decides the crate landed, and dates the landing to the last sighting plus
+-- fifteen. That fires whenever the player simply moves out of range of a crate
+-- still in the air, so every such flight teaches its model a descent shorter
+-- than the real one. Watched side by side, RCT's countdown reached "on the
+-- ground" with about thirty seconds of falling left -- short, which is the
+-- direction that inference biases.
+--
+-- The on-ground vignette is supposedly a brief blip that is easy to miss, and
+-- that is the reason they infer. It has not been a problem here: every descent
+-- so far was captured, and one checked against a player watching the crate
+-- land agreed to a second. Do not add the inference without first showing that
+-- readings are actually being lost.
+--
 -- Sanity bounds on a measured descent, seconds. Wide: an observed drop took
 -- about 1.5 to 2 minutes, and RCT clamps its own descent at 200, so anything
 -- inside this range is plausible and anything outside is a mis-paired reading.

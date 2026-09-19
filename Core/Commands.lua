@@ -278,13 +278,37 @@ HANDLERS.interval = function()
             for _, g in ipairs(list) do
                 ns.Print(("   %ds%s"):format(math.floor(g.gap + 0.5),
                     g.cycles > 1 and (" over %d cycles = %ds each"):format(
-                        g.cycles, math.floor(g.per + 0.5)) or ""))
+                        g.cycles, math.floor(g.per + 0.5)) or "  |cff777777single cycle|r"))
             end
         end
     end
     if not any then
         ns.Print("no intervals measured yet. Sit in one zone through two drops on the same shard.")
         ns.Print("|cff777777for reference: CrateTrackerZK ships 1100, RCT 1098-1099, WarCrateTracker 1095|r")
+        return
+    end
+
+    -- Single-cycle readings have come in consistently below multi-cycle ones:
+    -- 1054 and 1060 against 1086 and 1097, with no overlap between the groups.
+    -- Likely because arriving in a zone mid-flight dates the first drop late
+    -- while the second, waited for, is caught promptly -- which shortens the
+    -- gap. Shown split so the pattern stays visible as more arrive, since if it
+    -- holds, single-cycle readings should be excluded rather than merely
+    -- weighted down.
+    local oneN, oneSum, manyN, manySum, manyCycles = 0, 0, 0, 0, 0
+    for _, list in pairs(ns.db.gaps or {}) do
+        for _, g in ipairs(list) do
+            if g.cycles > 1 then
+                manyN, manySum, manyCycles = manyN + 1, manySum + g.gap, manyCycles + g.cycles
+            else
+                oneN, oneSum = oneN + 1, oneSum + g.gap
+            end
+        end
+    end
+    if oneN > 0 and manyN > 0 then
+        ns.Print(("|cff777777across all zones: %d single-cycle mean %ds, %d multi-cycle mean %ds|r"):format(
+            oneN, math.floor(oneSum / oneN + 0.5),
+            manyN, math.floor(manySum / manyCycles + 0.5)))
     end
 end
 
