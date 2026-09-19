@@ -123,5 +123,8 @@ frame:SetScript("OnEvent", function(_, event, name)
     if event ~= "ADDON_LOADED" or name ~= ADDON then return end
     EasyWarCratesDB = applyDefaults(EasyWarCratesDB or {})
     ns.db = EasyWarCratesDB
-    ns.Print("v" .. ns.version .. " loaded. |cffffffff/ewc|r for commands.")
+    local dropped = ns.Timers.Prune(ns.db.crates, ns.GetZoneInterval, GetServerTime())
+    ns.Print("v" .. ns.version .. " loaded. |cffffffff/ewc|r for commands."
+        .. (dropped > 0 and (" |cff777777(%d stale timer%s cleared)|r"):format(
+            dropped, dropped == 1 and "" or "s") or ""))
 end)

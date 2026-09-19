@@ -255,10 +255,10 @@ HANDLERS.route = function(rest)
         else
             local colour = row.status == "missed" and "|cffff5555"
                 or (row.status == "go" and "|cff33ff99" or "|cffffd100")
-            ns.Print(("%s %-3s shard %-6s drop in %s  %sleave in %s|r%s"):format(
+            ns.Print(("%s %-3s shard %-7s drop %s   %sleave %s|r%s"):format(
                 mark, ns.GetZoneAbbr(row.zoneID), tostring(row.shardID),
                 ns.FormatClock(row.dropIn), colour,
-                row.leaveIn >= 0 and ns.FormatClock(row.leaveIn) or "NOW",
+                row.leaveIn >= 0 and ns.FormatClock(row.leaveIn) or "  NOW",
                 (row.missed or 0) > 0 and ("  |cff777777x%d missed|r"):format(row.missed) or ""))
         end
     end

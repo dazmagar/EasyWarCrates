@@ -166,6 +166,35 @@ function Timers.MissedCycles(entry, interval, now)
     return cycles > 0 and cycles or 0
 end
 
+-- A timer this many cycles stale is not worth keeping. The shard re-rolls
+-- every time you leave a zone and fly back, so entries pile up for shards you
+-- will never stand in again -- three different Zul'Aman shards inside one
+-- evening's farming. An old entry still predicts that shard correctly; the
+-- problem is that returning to it is chance, so what it really contributes is
+-- a wall of dead rows to read past.
+--
+-- Generous on purpose: six cycles is nearly two hours, well past any raid's
+-- interest, and pruning is about legibility rather than saving space.
+local STALE_CYCLES = 6
+Timers.STALE_CYCLES = STALE_CYCLES
+
+-- Returns how many were dropped. intervalOf is passed in so this stays pure.
+function Timers.Prune(db, intervalOf, now)
+    local removed = 0
+    for zoneID, shards in pairs(db or {}) do
+        local interval = intervalOf(zoneID)
+        for shardID, entry in pairs(shards) do
+            local missed = Timers.MissedCycles(entry, interval, now)
+            if missed and missed > STALE_CYCLES then
+                shards[shardID] = nil
+                removed = removed + 1
+            end
+        end
+        if not next(shards) then db[zoneID] = nil end
+    end
+    return removed
+end
+
 -- Every tracked entry, flattened, soonest first. The UI wants a list, not a
 -- nested table.
 function Timers.Sorted(db, intervalOf, now)

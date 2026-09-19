@@ -11,9 +11,11 @@ ns.PCT = 0.01
 
 ns.version = "0.1.0"
 
--- M:SS for a countdown, or "--" when there is nothing to count.
+-- M:SS for a countdown, or "--" when there is nothing to count. Padded to a
+-- fixed width so columns of these line up -- 1:55 and 14:55 otherwise shunt
+-- everything after them sideways.
 function ns.FormatClock(seconds)
-    if type(seconds) ~= "number" then return "--" end
+    if type(seconds) ~= "number" then return "   --" end
     local s = math.max(0, math.floor(seconds + 0.5))
-    return string.format("%d:%02d", math.floor(s / 60), s % 60)
+    return string.format("%2d:%02d", math.floor(s / 60), s % 60)
 end

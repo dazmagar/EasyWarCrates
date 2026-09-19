@@ -207,6 +207,42 @@ t.test("stats on a zone with nothing observed yield nothing", function()
     t.eq(Timers.GapStats(nil, 2512), nil)
 end)
 
+-- The shard re-rolls every time you leave a zone and fly back, so entries pile
+-- up for shards nobody will stand in again -- three Zul'Aman shards inside one
+-- evening. They still predict their own shard correctly; the problem is that
+-- returning to it is chance, so what they contribute is rows to read past.
+t.test("timers too stale to matter are pruned", function()
+    local db = Timers.New()
+    Timers.Record(db, 2437, 111, T0, "falling")
+    Timers.Record(db, 2437, 222, T0, "falling")
+    local now = T0 + INTERVAL * (Timers.STALE_CYCLES + 2)
+    t.eq(Timers.Prune(db, function() return INTERVAL end, now), 2)
+    t.eq(next(db), nil, "a zone left with no shards goes too")
+end)
+
+t.test("a timer still worth having survives the prune", function()
+    local db = Timers.New()
+    Timers.Record(db, 2437, 111, T0, "falling")
+    local now = T0 + INTERVAL * 2
+    t.eq(Timers.Prune(db, function() return INTERVAL end, now), 0)
+    t.ok(Timers.Get(db, 2437, 111), "two cycles stale is still usable")
+end)
+
+t.test("pruning mixed ages keeps the fresh and drops the dead", function()
+    local db = Timers.New()
+    Timers.Record(db, 2437, 111, T0, "falling")                              -- ancient
+    Timers.Record(db, 2437, 222, T0 + INTERVAL * Timers.STALE_CYCLES, "falling")
+    local now = T0 + INTERVAL * (Timers.STALE_CYCLES + 2)
+    t.eq(Timers.Prune(db, function() return INTERVAL end, now), 1)
+    t.eq(Timers.Get(db, 2437, 111), nil)
+    t.ok(Timers.Get(db, 2437, 222))
+end)
+
+t.test("pruning an empty database is not an error", function()
+    t.eq(Timers.Prune(Timers.New(), function() return INTERVAL end, T0), 0)
+    t.eq(Timers.Prune(nil, function() return INTERVAL end, T0), 0)
+end)
+
 t.test("sorting an empty database is not an error", function()
     t.eq(#Timers.Sorted(Timers.New(), function() return INTERVAL end, T0), 0)
     t.eq(#Timers.Sorted(nil, function() return INTERVAL end, T0), 0)
