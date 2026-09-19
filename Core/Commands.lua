@@ -374,6 +374,59 @@ HANDLERS.travel = function(rest)
     ns.Print("|cff777777set one with /ewc travel ZA 70|r")
 end
 
+-- Are the zones' cycles offset from each other by a fixed amount?
+--
+-- Nobody knows, and it is worth knowing: raids rotate between three and five
+-- zones and that only works because the drops do not coincide. If the offset
+-- between two zones is CONSTANT, then catching one drop tells you when every
+-- other zone is due, and the cold-start problem -- an hour of waiting to learn
+-- six zones solo -- disappears without any player-to-player sync.
+--
+-- This prints the phase of each known timer within its cycle, and the gap
+-- between each pair. Run it across sessions: if the same pair keeps showing
+-- the same gap, the offset is fixed. If it wanders, it is not, and the idea is
+-- dead for the price of looking.
+HANDLERS.offsets = function()
+    local now = GetServerTime()
+    local rows = {}
+    for zoneID, shards in pairs(ns.db.crates or {}) do
+        local entry, shardID = ns.Route.FreshestForZone(ns.db.crates, zoneID)
+        if entry then
+            local interval = ns.GetZoneInterval(zoneID)
+            rows[#rows + 1] = {
+                zoneID = zoneID, shardID = shardID, interval = interval,
+                due = ns.Timers.Remaining(entry, interval, now),
+                missed = ns.Timers.MissedCycles(entry, interval, now),
+                precise = entry.precise,
+            }
+        end
+    end
+    if #rows < 2 then
+        return ns.Print("need timers in at least two zones to compare their phases.")
+    end
+    table.sort(rows, function(a, b) return a.due < b.due end)
+
+    ns.Print("phase of each zone within its own cycle:")
+    for _, r in ipairs(rows) do
+        ns.Print(("  %-3s shard %-7s due in %s  |cff777777cycle %ds%s%s|r"):format(
+            ns.GetZoneAbbr(r.zoneID), tostring(r.shardID), ns.FormatClock(r.due),
+            math.floor(r.interval + 0.5),
+            r.precise and "" or ", seeded from a crate already down",
+            (r.missed or 0) > 0 and (", %d missed"):format(r.missed) or ""))
+    end
+
+    ns.Print("gap between pairs -- watch whether these repeat across sessions:")
+    for i = 1, #rows do
+        for j = i + 1, #rows do
+            local a, b = rows[i], rows[j]
+            ns.Print(("  %s -> %s   %s  |cff777777(shards %s / %s)|r"):format(
+                ns.GetZoneAbbr(a.zoneID), ns.GetZoneAbbr(b.zoneID),
+                ns.FormatClock(b.due - a.due), tostring(a.shardID), tostring(b.shardID)))
+        end
+    end
+    ns.Print("|cff777777a shard number is per-zone, so equal numbers in two zones mean nothing|r")
+end
+
 HANDLERS.watch = function()
     ns.db.watch = not ns.db.watch
     ns.Print("live tracking readout " .. (ns.db.watch and "on" or "off"))
@@ -407,6 +460,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc travel   -- capital-to-zone flight times used by the route")
     ns.Print("  /ewc timers   -- tracked crate timers")
     ns.Print("  /ewc interval -- measured gaps between drops, per zone")
+    ns.Print("  /ewc offsets  -- whether the zones' cycles sit at a fixed offset")
     ns.Print("  /ewc airtime  -- measured parachute times; 'reset' clears them")
     ns.Print("  /ewc shard    -- cross-check the shard number against a creature GUID")
     ns.Print("  /ewc watch    -- toggle the live readout while a transport is tracked")
