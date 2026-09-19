@@ -133,6 +133,40 @@ t.test("an unmeasured zone still gives a figure, flagged as a guess", function()
     t.eq(eta.descentN, 0, "the caller decides how to caveat it, but must be able to")
 end)
 
+-- Measured, not assumed. Two flights promised release in 8 seconds and took 30
+-- and 37 -- both late, by 22 and 29, which is a bias rather than noise.
+t.test("the release estimate is corrected by the measured bias", function()
+    local bias = { [ZONE] = { n = 2, sum = 22 + 29 } }
+    local plain = Airtime.ETA({}, ZONE, fit(0.20, 0.50, 1, 0), { x = 0.55, y = 0.50 }, nil, T0)
+    local fixed = Airtime.ETA({}, ZONE, fit(0.20, 0.50, 1, 0), { x = 0.55, y = 0.50 }, nil, T0, bias)
+    t.near(plain.toRelease, 50, 1e-6, "no bias store, no correction")
+    t.near(fixed.toRelease, 50 + 25.5, 1e-6)
+    t.near(fixed.toReleaseRaw, 50, 1e-6, "the raw figure survives for scoring")
+    t.near(fixed.toGround, 50 + 25.5 + Airtime.DESCENT_GUESS, 1e-6)
+end)
+
+t.test("one sample is not enough to correct by", function()
+    local bias = { [ZONE] = { n = 1, sum = 29 } }
+    local eta = Airtime.ETA({}, ZONE, fit(0.20, 0.50, 1, 0), { x = 0.55, y = 0.50 }, nil, T0, bias)
+    t.near(eta.toRelease, 50, 1e-6, "a single odd flight must not swing it")
+    t.eq(eta.biasN, 1)
+end)
+
+-- Pooled across zones: the cause is not zone-specific and the samples are few,
+-- so splitting by zone would only be slower to learn the same number.
+t.test("bias pools observations from every zone", function()
+    local bias = { [2444] = { n = 1, sum = 22 }, [2405] = { n = 1, sum = 29 } }
+    local mean, n = Airtime.ReleaseBias(bias)
+    t.eq(n, 2)
+    t.near(mean, 25.5, 1e-9)
+end)
+
+t.test("a correction cannot drive the estimate below zero", function()
+    local bias = { [ZONE] = { n = 4, sum = -400 } }
+    local eta = Airtime.ETA({}, ZONE, fit(0.50, 0.50, 1, 0), { x = 0.55, y = 0.50 }, nil, T0, bias)
+    t.eq(eta.toRelease, 0)
+end)
+
 t.test("nothing to say yields nil, not an empty shape", function()
     t.eq(Airtime.ETA({}, ZONE, nil, nil, nil, T0), nil)
 end)

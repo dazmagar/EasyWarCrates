@@ -153,8 +153,11 @@ end
 function ns.OnPrediction(zoneID, result, fit)
     local s = result.best.spot
     ns.lastPrediction[zoneID] = { x = s.x, y = s.y, at = GetServerTime() }
-    local eta = ns.Airtime.ETA(ns.db.descent, zoneID, fit, s, nil, GetServerTime())
-    ns.lastPrediction[zoneID].toRelease = eta and eta.toRelease
+    local eta = ns.Airtime.ETA(ns.db.descent, zoneID, fit, s, nil, GetServerTime(), ns.db.release)
+    -- The RAW figure is remembered, because that is what the next measurement
+    -- scores against. Storing the corrected one would drive the measured bias
+    -- to zero and silently undo the correction that produced it.
+    ns.lastPrediction[zoneID].toRelease = eta and eta.toReleaseRaw
     local when = ""
     if eta then
         when = (", |cffffd100on the ground in %s|r%s"):format(

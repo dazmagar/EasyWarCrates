@@ -90,6 +90,31 @@ function Airtime.DescentSamples(store, zoneID)
     return (type(list) == "table" and not list.n) and list or nil
 end
 
+-- How wrong the raw release estimate runs, pooled across zones.
+--
+-- Measured, not assumed: the first two flights it ran on promised release in 8
+-- seconds and took 30 and 37. Both late, by 22 and 29, which is a systematic
+-- bias rather than noise -- most likely the transport slowing on approach
+-- while the heading fit reports an average over its whole window, though the
+-- cause does not matter for correcting it.
+--
+-- Pooled rather than kept per zone because the cause is not zone-specific and
+-- there are very few samples; a per-zone split would just be slower to learn
+-- the same number. Applied only once there are at least this many, so a single
+-- odd flight cannot swing it.
+local BIAS_MIN_N = 2
+Airtime.BIAS_MIN_N = BIAS_MIN_N
+
+function Airtime.ReleaseBias(store)
+    local n, sum = 0, 0
+    for _, acc in pairs(store or {}) do
+        n = n + (acc.n or 0)
+        sum = sum + (acc.sum or 0)
+    end
+    if n < BIAS_MIN_N then return 0, n end
+    return sum / n, n
+end
+
 -- Seconds until the transport reaches the spot it was called for. nil when the
 -- fit cannot support it. Never negative: a transport past its target is at it.
 function Airtime.ToRelease(fit, target)
@@ -110,7 +135,11 @@ end
 --   phase      "inbound" | "falling" | "down"
 --
 -- fallingSince is when the parachute was first seen, if it has been.
-function Airtime.ETA(store, zoneID, fit, target, fallingSince, now)
+-- releaseStore is the measured bias; pass nil to get the uncorrected figure.
+-- toReleaseRaw is always the uncorrected value, because that is what the next
+-- measurement has to be scored against -- scoring a corrected estimate would
+-- drive the bias to zero and quietly remove the correction that earned it.
+function Airtime.ETA(store, zoneID, fit, target, fallingSince, now, releaseStore)
     local descent, n = Airtime.Descent(store, zoneID)
 
     if fallingSince then
@@ -122,11 +151,17 @@ function Airtime.ETA(store, zoneID, fit, target, fallingSince, now)
         }
     end
 
-    local toRelease = Airtime.ToRelease(fit, target)
-    if not toRelease then return nil end
+    local raw = Airtime.ToRelease(fit, target)
+    if not raw then return nil end
+    local bias, biasN = Airtime.ReleaseBias(releaseStore)
+    local toRelease = raw + bias
+    if toRelease < 0 then toRelease = 0 end
     return {
         phase = "inbound",
         toRelease = toRelease,
+        toReleaseRaw = raw,
+        bias = bias,
+        biasN = biasN,
         toGround = toRelease + descent,
         descentN = n,
     }
