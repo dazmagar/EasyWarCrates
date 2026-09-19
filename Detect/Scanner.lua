@@ -83,6 +83,17 @@ local lastSweptStamp, lastFalling = {}, {}
 -- the failure this addon exists to prevent -- so it says so, once a minute at
 -- most rather than once a second.
 local noPosWarned = {}
+-- When continuous observation of a zone began. Reset clears it, so it restarts
+-- at every zone change and every reload.
+local zoneWatchSince = {}
+-- Watching a zone for less than this before a parachute appears proves nothing:
+-- longer than any fall, so a crate that appears sooner came into vignette range
+-- rather than into the air. Eversong recorded 14 seconds as a whole descent
+-- because two sweeps had happened before the parachute drifted into range.
+local MIN_WATCH = 150
+-- How long a watched arrival vouches for a fall. One cycle is ~1090s, so this
+-- cannot reach across to the next crate.
+local ARRIVED_RECENT = 300
 local NO_POS_COOLDOWN = 60
 -- A previous sweep older than this is not evidence of having been watching.
 local SWEEP_FRESH = 60
@@ -228,6 +239,7 @@ function Scanner.Reset()
     fallAtlas, atlasFlip = {}, {}
     lastSweptStamp, lastFalling = {}, {}
     noPosWarned = {}
+    zoneWatchSince = {}
     liveCrate = {}
     stopPolling()
 end
@@ -432,6 +444,7 @@ function Scanner.OnVignettesUpdated()
     end
 
     local prevSweep, prevFalling = lastSweptStamp[zoneID], lastFalling[zoneID] or {}
+    if not prevSweep then zoneWatchSince[zoneID] = stamp end
     lastSweptStamp[zoneID], lastFalling[zoneID] = stamp, fallingNow
 
     for _, guid in ipairs(guids) do
@@ -524,9 +537,26 @@ function Scanner.OnVignettesUpdated()
                                 -- in the set -- because arrival needs a live
                                 -- heading fit and a transport circling its
                                 -- point has no baseline to fit.
-                                local sawItStart = prevSweep
-                                    and (stamp - prevSweep) <= SWEEP_FRESH
-                                    and not prevFalling[key] or nil
+                                -- Watching the transport reach its point is
+                                -- the only unambiguous evidence, because it is
+                                -- the moment the crate was let go.
+                                --
+                                -- Failing that, a parachute that was not there
+                                -- a moment ago MIGHT have just appeared, or
+                                -- might have drifted into vignette range -- the
+                                -- two look identical. Only a watch longer than
+                                -- any possible fall tells them apart, and even
+                                -- then only because the player has not moved.
+                                local sawItStart
+                                local arrived = arrivedAt[zoneID]
+                                if arrived and (stamp - arrived) <= ARRIVED_RECENT then
+                                    sawItStart = true
+                                elseif prevSweep and (stamp - prevSweep) <= SWEEP_FRESH
+                                    and not prevFalling[key]
+                                    and zoneWatchSince[zoneID]
+                                    and (stamp - zoneWatchSince[zoneID]) >= MIN_WATCH then
+                                    sawItStart = true
+                                end
                                 fallingSince[key] = stamp
                                 partialFall[key] = not sawItStart or nil
                                 releaseLag[key] = sawItStart and arrivedAt[zoneID]

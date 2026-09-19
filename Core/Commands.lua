@@ -195,7 +195,7 @@ HANDLERS.airtime = function(rest)
             math.floor(d.secs + 0.5), ns.GetZoneName(zoneID), #list))
     end
 
-    ns.Print("time under the parachute, measured per zone:")
+    ns.Print("time under the parachute -- the middle reading, per zone:")
     local any = false
     for zoneID in pairs(ns.ZONES) do
         local mean, n, lo, hi, over = ns.Airtime.Descent(ns.db.descent, zoneID)

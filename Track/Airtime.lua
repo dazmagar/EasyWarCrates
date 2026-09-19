@@ -109,7 +109,14 @@ function Airtime.NoteDescent(store, zoneID, seconds, overlapped, pos, partial, l
     return list[#list]
 end
 
--- mean, n, min, max, overlappedCount, partialCount -- or the guess with n = 0.
+-- typical, n, min, max, overlappedCount, partialCount -- or the guess, n = 0.
+--
+-- The middle reading, not the mean. Harandar has measured 86, 86, 87, 61, 19,
+-- 86, 86: five of seven agree on 86-87 and the mean is 73, which describes no
+-- drop that has ever happened there. Both tails are real and neither is
+-- symmetric -- a crate can catch on a branch and be down early, and the game
+-- can hold its parachute on screen for another half minute after it lands --
+-- so the middle is the only summary that survives them.
 --
 -- Partial readings are counted and shown but kept out of the mean. Timing a
 -- descent from a parachute that was already in the air when the player arrived
@@ -119,20 +126,21 @@ end
 function Airtime.Descent(store, zoneID)
     local list = store and store[zoneID]
     if type(list) ~= "table" or #list == 0 then return DESCENT_GUESS, 0 end
-    local sum, n, lo, hi, over, part = 0, 0, nil, nil, 0, 0
+    local full, over, part = {}, 0, 0
     for _, d in ipairs(list) do
         if d.partial then
             part = part + 1
         else
-            n = n + 1
-            sum = sum + d.secs
-            if not lo or d.secs < lo then lo = d.secs end
-            if not hi or d.secs > hi then hi = d.secs end
+            full[#full + 1] = d.secs
         end
         if d.overlapped then over = over + 1 end
     end
+    local n = #full
     if n == 0 then return DESCENT_GUESS, 0, nil, nil, over, part end
-    return sum / n, n, lo, hi, over, part
+    table.sort(full)
+    local mid = (n % 2 == 1) and full[(n + 1) / 2]
+        or (full[n / 2] + full[n / 2 + 1]) / 2
+    return mid, n, full[1], full[n], over, part
 end
 
 -- The individual readings, for inspection.

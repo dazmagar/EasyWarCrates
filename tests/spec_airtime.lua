@@ -253,3 +253,31 @@ t.test("the circling leg is stored alongside the fall", function()
     t.eq(s.lag, 41, "rounded, and kept apart from the fall it is not part of")
     t.eq(select(2, Airtime.Descent(store, ZONE)), 1, "and it is still a full reading")
 end)
+
+-- Harandar's seven readings, as measured. Five agree on 86-87; the mean is 73,
+-- which is not a time any crate there has ever taken. Both tails are genuine:
+-- a crate can catch on a branch and be down early, and the game can leave the
+-- parachute drawn for another half minute after it lands.
+t.test("the figure is the middle reading, not one the data never produced", function()
+    local store = {}
+    for _, secs in ipairs({ 86, 86, 87, 61, 19, 86, 86 }) do
+        Airtime.NoteDescent(store, ZONE, secs)
+    end
+    local typical, n, lo, hi = Airtime.Descent(store, ZONE)
+    t.eq(n, 7)
+    t.eq(typical, 86, "the mean of these is 73, which describes no drop here")
+    t.eq(lo, 19, "the spread is still shown honestly")
+    t.eq(hi, 87)
+end)
+
+t.test("an even count takes the middle pair", function()
+    local store = {}
+    for _, secs in ipairs({ 80, 90, 100, 200 }) do Airtime.NoteDescent(store, ZONE, secs) end
+    t.eq(Airtime.Descent(store, ZONE), 95)
+end)
+
+t.test("readings out of order still find the middle", function()
+    local store = {}
+    for _, secs in ipairs({ 129, 44, 87, 83, 85 }) do Airtime.NoteDescent(store, ZONE, secs) end
+    t.eq(Airtime.Descent(store, ZONE), 85, "Zul'Aman, as it stands")
+end)

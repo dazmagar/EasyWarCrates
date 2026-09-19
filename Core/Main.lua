@@ -153,7 +153,7 @@ function ns.OnDescentMeasured(zoneID, seconds, partial)
         ns.GetZoneName(zoneID), math.floor(seconds + 0.5),
         partial and " |cffff8800(joined mid-fall -- a lower bound, not counted)|r" or ""))
     if n > 1 then
-        ns.Print(("  %d measured here: mean %ds, range %d-%d"):format(
+        ns.Print(("  %d measured here: typically %ds, range %d-%d"):format(
             n, math.floor(mean + 0.5), math.floor(lo + 0.5), math.floor(hi + 0.5)))
     end
 end
