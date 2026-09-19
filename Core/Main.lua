@@ -160,6 +160,33 @@ function ns.OnGapObserved(zoneID, shardID, noted)
     end
 end
 
+-- Place the pin, then read it back.
+--
+-- Clearing first is what RCT does and this did not: an existing waypoint --
+-- the player's own, another addon's, or this addon's from the previous flight
+-- -- can stop a new one taking, and nothing says so.
+--
+-- CanSetUserWaypoint is no longer asked. RCT never asks it and RCT's pins
+-- appear; asking it and refusing on a false meant quietly declining to place a
+-- pin that would have worked. Attempting and then checking what actually
+-- landed is both more reliable and the thing this addon keeps telling itself
+-- to do -- look at the artefact, not the return code.
+function ns.SetCratePin(zoneID, x, y)
+    C_Map.ClearUserWaypoint()
+    C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(zoneID, x, y))
+    C_SuperTrack.SetSuperTrackedUserWaypoint(true)
+
+    local set = C_Map.GetUserWaypoint()
+    if set then
+        ns.Print(("  |cff777777map pin set on %s|r"):format(ns.GetZoneName(zoneID)))
+        return true
+    end
+    ns.Print(("  |cffff8800the map pin did not take|r |cff777777(the game %s allow one on %s)|r"):format(
+        C_Map.CanSetUserWaypoint(zoneID) and "says it does" or "says it does not",
+        ns.GetZoneName(zoneID)))
+    return false
+end
+
 -- Called when a transport's heading has settled on one spot.
 function ns.OnPrediction(zoneID, result, fit)
     local s = result.best.spot
@@ -180,31 +207,10 @@ function ns.OnPrediction(zoneID, result, fit)
         s.x * 100, s.y * 100, ns.GetZoneName(zoneID), when,
         math.deg(math.atan(result.best.tan)), fit.n))
 
-    -- Say when the pin does not get placed, and why. It failed silently once
-    -- in Zul'Aman: the call was right, announced and acted on by the player,
-    -- and the only thing missing was the marker -- with nothing on screen to
-    -- say whether the addon had chosen not to place one or had tried and been
-    -- refused.
     if not ns.db.waypoint then
         ns.Print("  |cff777777no map pin: turned off in settings|r")
-    elseif not C_Map.CanSetUserWaypoint(zoneID) then
-        ns.Print(("  |cffff8800no map pin: the game will not allow one on %s|r"):format(
-            ns.GetZoneName(zoneID)))
     else
-        C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(zoneID, s.x, s.y))
-        C_SuperTrack.SetSuperTrackedUserWaypoint(true)
-        -- Read back rather than trusting the call. A pin that did not take is
-        -- exactly as useful as no pin, and the point of saying so is to find
-        -- out which happened.
-        -- Success reported too. Staying quiet on success made "no message"
-        -- mean either "it worked" or "you are running an older build", and
-        -- those needed telling apart while the pin was not appearing.
-        local set = C_Map.GetUserWaypoint()
-        if not set then
-            ns.Print("  |cffff8800the map pin did not take|r")
-        else
-            ns.Print(("  |cff777777map pin set on %s|r"):format(ns.GetZoneName(zoneID)))
-        end
+        ns.SetCratePin(zoneID, s.x, s.y)
     end
 end
 

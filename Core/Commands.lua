@@ -458,9 +458,12 @@ HANDLERS.pin = function()
     if not pos then
         return ns.Print("|cffff8800cannot read your position on the zone map -- nothing to test with|r")
     end
+    local existing = C_Map.GetUserWaypoint()
+    ns.Print(("a pin was already set: %s"):format(existing
+        and ("yes, on map %s -- clearing it first"):format(tostring(existing.uiMapID)) or "no"))
+
     local x, y = pos:GetXY()
-    C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(zoneID, x, y))
-    C_SuperTrack.SetSuperTrackedUserWaypoint(true)
+    ns.SetCratePin(zoneID, x, y)
 
     local back = C_Map.GetUserWaypoint()
     if not back then
