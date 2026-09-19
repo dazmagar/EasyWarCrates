@@ -19,8 +19,10 @@ local ADDON, ns = ...
 -- GetZoneInterval prefers what this client has actually observed.
 --
 -- abbr is what crate farmers actually say, and what the route editor accepts as
--- input. Taken from WarCrateTracker (MIT, Copyright 2024 Samuel Colburn), which
--- carries the same set minus its "MID:" prefix.
+-- input. Mostly from WarCrateTracker (MIT, Copyright 2024 Samuel Colburn), minus
+-- its "MID:" prefix -- but Eversong and Harandar are ES and HA here, not its EW
+-- and HD, because that is what Dmitrii's raids call out loud and the table only
+-- exists to match what people say. Both spellings resolve either way.
 --
 -- travel is seconds from the capital to a drop point in that zone, which is the
 -- number the rotation planner needs. Silvermoon has portals to Harandar,
@@ -38,9 +40,9 @@ local ADDON, ns = ...
 -- Route's grace period absorbs arriving a little late. /ewc travel overrides
 -- any of these per zone.
 local ZONES = {
-    [2395] = { name = "Eversong Woods",  abbr = "EW", interval = 1100, travel = 45 },
+    [2395] = { name = "Eversong Woods",  abbr = "ES", interval = 1100, travel = 45 },
     [2405] = { name = "Voidstorm",       abbr = "VS", interval = 1100, travel = 75 },
-    [2413] = { name = "Harandar",        abbr = "HD", interval = 1100, travel = 75 },
+    [2413] = { name = "Harandar",        abbr = "HA", interval = 1100, travel = 75 },
     [2437] = { name = "Zul'Aman",        abbr = "ZA", interval = 1100, travel = 90 },
     [2444] = { name = "Slayer's Rise",   abbr = "SR", interval = 1100, travel = 90 },
     [2512] = { name = "The Coiled Isle", abbr = "CI", interval = 1100, travel = 75 },

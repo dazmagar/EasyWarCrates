@@ -60,7 +60,7 @@ local function build()
 
     layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Rotation"))
     layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(
-        "Set with /ewc route ZA HD SR VS. Travel times: /ewc travel."))
+        "Set with /ewc route ZA HA SR VS. Travel times: /ewc travel."))
 
     Settings.RegisterAddOnCategory(category)
 end

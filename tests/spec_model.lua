@@ -1,7 +1,7 @@
 local ns, t = ...
 local Model, Timers = ns.Model, ns.Timers
 
-local ZA, HD, SR, VS = 2437, 2413, 2444, 2405
+local ZA, HA, SR, VS = 2437, 2413, 2444, 2405
 local T0 = 1000000
 
 local function db(...)
@@ -22,10 +22,10 @@ t.test("with no route, every timer is shown soonest first", function()
     local rows = Model.BuildRows(db(
         { ZA, 1, T0 - 100 },   -- due in ~1000
         { VS, 2, T0 - 900 },   -- due in ~200
-        { HD, 3, T0 - 500 }), nil, T0)
+        { HA, 3, T0 - 500 }), nil, T0)
     t.eq(#rows, 3)
     t.eq(rows[1].zoneID, VS)
-    t.eq(rows[2].zoneID, HD)
+    t.eq(rows[2].zoneID, HA)
     t.eq(rows[3].zoneID, ZA)
     t.notOk(rows[1].inRoute)
     t.eq(rows[1].leaveIn, nil, "leave-in only means something for a rotation")
@@ -102,7 +102,7 @@ t.test("an empty database draws nothing rather than erroring", function()
 end)
 
 t.test("a route with no timers at all still lists its zones", function()
-    local rows = Model.BuildRows(Timers.New(), { ZA, HD }, T0)
+    local rows = Model.BuildRows(Timers.New(), { ZA, HA }, T0)
     t.eq(#rows, 2)
     for _, r in ipairs(rows) do
         t.eq(r.status, "unknown")

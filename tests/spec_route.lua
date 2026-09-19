@@ -1,7 +1,7 @@
 local ns, t = ...
 local Route, Timers = ns.Route, ns.Timers
 
-local ZA, HD, SR, VS = 2437, 2413, 2444, 2405
+local ZA, HA, SR, VS = 2437, 2413, 2444, 2405
 local T0 = 1000000
 local INTERVAL = 1100
 
@@ -20,7 +20,7 @@ t.test("route text is parsed from the abbreviations raids actually use", functio
     local zones, bad = Route.Parse("ZA Hd SR VS")
     t.eq(#zones, 4)
     t.eq(zones[1], ZA)
-    t.eq(zones[2], HD)
+    t.eq(zones[2], HA)
     t.eq(zones[3], SR)
     t.eq(zones[4], VS)
     t.eq(#bad, 0)
@@ -89,11 +89,11 @@ end)
 t.test("the plan is ordered by drop time, not by the order they were typed", function()
     local d = db(
         { ZA, 1, T0 - 100 },   -- drops in 1000s
-        { HD, 2, T0 - 500 },   -- drops in 600s
+        { HA, 2, T0 - 500 },   -- drops in 600s
         { VS, 3, T0 - 900 })   -- drops in 200s
-    local plan = Route.Plan(d, { ZA, HD, VS }, intervalOf, travelOf, T0)
+    local plan = Route.Plan(d, { ZA, HA, VS }, intervalOf, travelOf, T0)
     t.eq(plan[1].zoneID, VS)
-    t.eq(plan[2].zoneID, HD)
+    t.eq(plan[2].zoneID, HA)
     t.eq(plan[3].zoneID, ZA)
 end)
 
@@ -136,7 +136,11 @@ end)
 -- Not a literal round trip: parsing is forgiving and Describe is canonical, so
 -- whatever spelling went in comes back the one way the addon writes it.
 t.test("Describe normalises whatever spelling was typed", function()
-    t.eq(Route.Describe(Route.Parse("ZA HD SR VS")), "ZA HD SR VS")
-    t.eq(Route.Describe(Route.Parse("za hd sr vs")), "ZA HD SR VS")
-    t.eq(Route.Describe(Route.Parse("zulaman, harandar / slay void")), "ZA HD SR VS")
+    t.eq(Route.Describe(Route.Parse("ZA HA SR VS")), "ZA HA SR VS")
+    -- The two zones whose canonical spelling changed to match what raids call
+    -- out. Both of the older ones must keep parsing: a route dictated over
+    -- voice is typed by whoever heard it.
+    t.eq(Route.Describe(Route.Parse("za hd sr vs")), "ZA HA SR VS")
+    t.eq(Route.Describe(Route.Parse("ew")), "ES")
+    t.eq(Route.Describe(Route.Parse("zulaman, harandar / slay void")), "ZA HA SR VS")
 end)
