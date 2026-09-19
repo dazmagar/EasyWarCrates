@@ -76,7 +76,7 @@ Airtime.CONFIDENT_N = CONFIDENT_N
 -- Samples are kept individually rather than folded into a running sum, for the
 -- same reason the interval gaps are: with one reading per zone a mean is not a
 -- measurement, and the spread is the thing worth seeing.
-function Airtime.NoteDescent(store, zoneID, seconds, overlapped, pos, partial)
+function Airtime.NoteDescent(store, zoneID, seconds, overlapped, pos, partial, lag)
     if type(store) ~= "table" or not zoneID then return nil end
     seconds = tonumber(seconds)
     if not seconds or seconds < DESCENT_MIN or seconds > DESCENT_MAX then return nil end
@@ -98,6 +98,7 @@ function Airtime.NoteDescent(store, zoneID, seconds, overlapped, pos, partial)
         secs = seconds,
         overlapped = overlapped or nil,
         partial = partial or nil,
+        lag = lag and math.floor(lag + 0.5) or nil,
         x = pos and math.floor(pos.x * 1000 + 0.5) / 10 or nil,
         y = pos and math.floor(pos.y * 1000 + 0.5) / 10 or nil,
     }

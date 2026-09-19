@@ -240,3 +240,16 @@ t.test("with nothing but partial readings the guess still stands", function()
     t.eq(mean, Airtime.DESCENT_GUESS, "a lower bound is not a measurement")
     t.eq(n, 0)
 end)
+
+-- The two legs of a drop are measured separately now: how long the transport
+-- circles before letting go, and how long the crate then falls. Zul'Aman
+-- readings split 83/85 against 129/129 and Slayer's Rise gave 91 and 134 at
+-- the same spot, so the fall alone does not explain the spread.
+t.test("the circling leg is stored alongside the fall", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 86, nil, nil, nil, 41.4)
+    local s = Airtime.DescentSamples(store, ZONE)[1]
+    t.eq(s.secs, 86)
+    t.eq(s.lag, 41, "rounded, and kept apart from the fall it is not part of")
+    t.eq(select(2, Airtime.Descent(store, ZONE)), 1, "and it is still a full reading")
+end)

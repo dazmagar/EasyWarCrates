@@ -204,12 +204,14 @@ HANDLERS.airtime = function(rest)
             ns.Print(("  %-3s %3ds  |cff777777from %d drop%s, range %d-%d%s|r"):format(
                 ns.GetZoneAbbr(zoneID), math.floor(mean + 0.5), n, n == 1 and "" or "s",
                 math.floor(lo + 0.5), math.floor(hi + 0.5),
-                (over or 0) > 0 and (", %d with the parachute still drawn"):format(over) or ""))
+                ""))
             for i, d in ipairs(ns.Airtime.DescentSamples(ns.db.descent, zoneID) or {}) do
-                ns.Print(("   %2d. %3ds  %s%s"):format(i, math.floor(d.secs + 0.5),
+                -- The overlap flag is not shown: it fired on 19 readings out
+                -- of 19, so it separates nothing. The release lag might.
+                ns.Print(("   %2d. %3ds  %s%s%s"):format(i, math.floor(d.secs + 0.5),
                     d.x and ("|cff777777at %.1f, %.1f|r"):format(d.x, d.y) or "|cff777777spot not recorded|r",
-                    d.partial and "  |cffff8800joined mid-fall, not counted|r"
-                        or (d.overlapped and "  |cffff8800parachute still drawn|r" or "")))
+                    d.lag and ("  |cff777777%ds circling first|r"):format(d.lag) or "",
+                    d.partial and "  |cffff8800joined mid-fall, not counted|r" or ""))
             end
         else
             ns.Print(("  %-3s %3ds  |cff777777guess, nothing measured here|r"):format(
