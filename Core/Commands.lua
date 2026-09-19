@@ -134,7 +134,12 @@ HANDLERS.predict = function()
     if not zoneID then return ns.Print("not in a tracked crate zone.") end
     local r = ns.Scanner.Prediction(zoneID)
     if not r then return ns.Print("no transport being tracked right now.") end
-    if not r.ok then
+    if r.committed then
+        ns.Print(("|cff33ff99called|r -> %s, %s%s"):format(
+            fmtPct(r.committed.x), fmtPct(r.committed.y),
+            r.arrived and "  |cff77dd77transport has reached it|r" or " |cff777777(still inbound)|r"))
+        ns.Print("|cff777777the call is final -- a transport drops once, so its heading afterwards means nothing|r")
+    elseif not r.ok then
         ns.Print("|cffff8800holding|r -- " .. tostring(r.reason)
             .. (r.best and (", best is %s,%s"):format(fmtPct(r.best.spot.x), fmtPct(r.best.spot.y)) or ""))
     else

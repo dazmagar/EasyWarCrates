@@ -15,7 +15,19 @@ ns.Scanner = Scanner
 local function fitClock() return GetTime() end
 local function stampClock() return GetServerTime() end
 
--- Transports currently in the air, by vignette GUID.
+-- The transport in the air, one per zone.
+--
+-- Keyed by zone rather than by vignette GUID, because the GUID churns: the
+-- same plane's vignette disappears and comes back under a new id every few
+-- seconds. Keying on it built a fresh track each time, with its own sample
+-- count and its own idea of whether it had committed, so one track would
+-- commit while a sibling sat at four samples and the readout alternated
+-- between them. The GUID cooldown, the everFit guard and the empty-track
+-- sweep were each treating a symptom of this.
+--
+-- A zone has one crate per cycle and therefore one transport, so a zone is the
+-- honest key. The current GUID is carried on the track and replaced as it
+-- moves.
 local tracks = {}
 -- When each zone last had a transport announced, keyed by zone rather than by
 -- track. See the cooldown's use below for why that distinction matters.
@@ -98,9 +110,9 @@ function Scanner.Reset()
 end
 
 local function dropStaleTracks(now)
-    for guid, tr in pairs(tracks) do
+    for zoneID, tr in pairs(tracks) do
         if now - (tr.lastSeen or 0) > TRACK_STALE then
-            tracks[guid] = nil
+            tracks[zoneID] = nil
         end
     end
 end
@@ -109,11 +121,7 @@ end
 -- vignette shows up there: the question the tracking existed to answer has
 -- just been answered by the game.
 function Scanner.EndTracks(zoneID)
-    for guid, tr in pairs(tracks) do
-        if tr.zoneID == zoneID then
-            tracks[guid] = nil
-        end
-    end
+    tracks[zoneID] = nil
 end
 
 -- Re-reads the position of every transport being tracked. Also the place a
@@ -127,22 +135,22 @@ function Scanner.Poll()
     local zoneID = ns.Zones.Normalize(rawMap)
     local now = fitClock()
 
-    for guid, tr in pairs(tracks) do
-        local info = C_VignetteInfo.GetVignetteInfo(guid)
-        if not info or ns.VignetteStage(info.vignetteID) ~= "flying" then
-            tracks[guid] = nil
-        else
-            local pos = vignettePosition(guid, tr.zoneID or zoneID, rawMap)
+    for trackZone, tr in pairs(tracks) do
+        local info = C_VignetteInfo.GetVignetteInfo(tr.guid)
+        -- A GUID that has gone quiet is not the end of anything: it churns
+        -- constantly and the event hands the track its replacement. The track
+        -- ends when a crate drops (EndTracks), when the vignette turns into
+        -- something that is not a transport, or when it goes unseen for
+        -- TRACK_STALE.
+        if info and ns.VignetteStage(info.vignetteID) ~= "flying" then
+            tracks[trackZone] = nil
+        elseif info then
+            local pos = vignettePosition(tr.guid, trackZone, rawMap)
             if pos then
                 tr.lastSeen = now
                 if tr.track:Add(now, pos.x, pos.y) then
-                    Scanner.Evaluate(tr.zoneID, tr)
+                    Scanner.Evaluate(trackZone, tr)
                 end
-            elseif tr.track:Count() == 0 then
-                -- Nothing readable and nothing left in the window. Waiting out
-                -- TRACK_STALE would only keep an empty track around to be
-                -- narrated at.
-                tracks[guid] = nil
             end
         end
     end
@@ -237,19 +245,13 @@ end
 -- Current best guess for the zone, or nil. Exposed so the UI and the slash
 -- commands read the same answer the scanner acted on.
 function Scanner.Prediction(zoneID)
-    local best
-    for _, tr in pairs(tracks) do
-        if tr.zoneID == zoneID then
-            local fit = tr.track:Fit()
-            if fit then
-                local r = ns.Predict.Evaluate(ns.GetDropPoints(zoneID), fit)
-                r.fit, r.guid = fit, tr.guid
-                if r.ok and (not best or not best.ok) then best = r
-                elseif not best then best = r end
-            end
-        end
-    end
-    return best
+    local tr = tracks[zoneID]
+    local fit = tr and tr.track:Fit()
+    if not fit then return nil end
+
+    local r = ns.Predict.Evaluate(ns.GetDropPoints(zoneID), fit)
+    r.fit, r.committed, r.arrived = fit, tr.committed, tr.arrived
+    return r
 end
 
 function Scanner.OnVignettesUpdated()
@@ -280,10 +282,10 @@ function Scanner.OnVignettesUpdated()
                     -- This zone's crate is already down. Whatever this
                     -- transport is doing now, it is not carrying one.
                 elseif stage == "flying" then
-                    local tr = tracks[guid]
+                    local tr = tracks[zoneID]
                     if not tr then
-                        tr = { track = ns.Heading.NewTrack(guid), guid = guid, zoneID = zoneID }
-                        tracks[guid] = tr
+                        tr = { track = ns.Heading.NewTrack(zoneID), zoneID = zoneID }
+                        tracks[zoneID] = tr
                         -- Announced per zone, not per track. A transport's
                         -- vignette churns -- its GUID comes and goes, and each
                         -- reappearance builds a fresh track -- which printed
@@ -295,7 +297,7 @@ function Scanner.OnVignettesUpdated()
                                 ns.GetZoneName(zoneID)))
                         end
                     end
-                    tr.zoneID = zoneID
+                    tr.guid = guid
                     tr.lastSeen = tNow
                     tr.track:Add(tNow, pos.x, pos.y)
                     startPolling()
@@ -305,12 +307,10 @@ function Scanner.OnVignettesUpdated()
                     -- is the answer, so every guess about this zone is now
                     -- worthless -- including the transport's.
                     --
-                    -- Clearing tracks[guid] alone is not enough and looked
-                    -- enough: the crate's vignette carries a different GUID
-                    -- from the transport that dropped it, and the transport
-                    -- does not despawn. It lingers and circles its drop point,
-                    -- so its track survived the drop and went on reporting
-                    -- "nothing-ahead" indefinitely.
+                    -- The transport does not despawn when it drops its cargo,
+                    -- it circles its drop point, so without this its track
+                    -- survives and goes on reporting a heading for a plane
+                    -- with nothing left to carry.
                     Scanner.EndTracks(zoneID)
                     recentDrop[zoneID] = tNow
                     if not shard then
