@@ -128,18 +128,27 @@ function Timers.NoteGap(store, zoneID, gap, expected)
     return list[#list]
 end
 
--- count, mean, min, max over the single-cycle observations for a zone, or nil.
+-- count, mean, min, max over a zone's observations, or nil.
+--
+-- The mean is total elapsed over total cycles, not the average of the
+-- per-cycle figures. An observation spanning four drops carries a quarter of
+-- the detection error of one spanning a single drop, so it is four times the
+-- evidence, and averaging them as equals throws that away. Measured live: one
+-- Slayer's Rise gap over one cycle read 1054s, one Harandar gap over four read
+-- 1086s each -- treating those as two equal votes would land between them for
+-- no good reason.
 function Timers.GapStats(store, zoneID)
     local list = store and store[zoneID]
     if not list or #list == 0 then return nil end
-    local sum, lo, hi, n = 0, nil, nil, 0
+    local elapsed, cycles, lo, hi, n = 0, 0, nil, nil, 0
     for _, g in ipairs(list) do
         n = n + 1
-        sum = sum + g.per
+        elapsed = elapsed + g.gap
+        cycles = cycles + g.cycles
         if not lo or g.per < lo then lo = g.per end
         if not hi or g.per > hi then hi = g.per end
     end
-    return n, sum / n, lo, hi
+    return n, elapsed / cycles, lo, hi, cycles
 end
 
 function Timers.NextSpawn(entry, interval, now)

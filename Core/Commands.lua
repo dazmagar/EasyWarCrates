@@ -212,10 +212,14 @@ HANDLERS.shard = function()
     local guid = UnitGUID(unit)
     ns.Print("unit GUID: " .. ns.Shard.Label(guid))
     if type(guid) == "string" then
+        -- "[^-]*" matches the empty run between every pair of separators as
+        -- well as the fields themselves, so counting its matches numbers the
+        -- fields 1, 3, 5. Split on the separator instead and keep empties,
+        -- which is the layout Shard.FromGUID reads positionally.
         local i = 0
-        for field in string.gmatch(guid, "[^-]*") do
+        for field in (guid .. "-"):gmatch("([^-]*)-") do
             i = i + 1
-            if field ~= "" then ns.Print(("  field %d = %s"):format(i, field)) end
+            ns.Print(("  field %d = %s"):format(i, field == "" and "|cff777777(empty)|r" or field))
         end
     end
     local shard, instance = ns.Shard.FromGUID(guid)

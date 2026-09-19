@@ -202,6 +202,29 @@ t.test("stats report the spread, not just an average", function()
     t.eq(hi, 1105, "whether these cluster or scatter is the whole question")
 end)
 
+-- An observation spanning four drops carries a quarter of the detection error
+-- of one spanning a single drop, so it is four times the evidence. Both of
+-- these turned up live: a one-cycle Slayer's Rise gap of 1054s and a
+-- four-cycle Harandar gap averaging 1086s.
+t.test("a longer observation counts for more than a shorter one", function()
+    local store = {}
+    Timers.NoteGap(store, 2444, 1054, 1100)   -- one cycle
+    Timers.NoteGap(store, 2444, 4344, 1100)   -- four cycles, 1086 each
+    local n, mean, _, _, cycles = Timers.GapStats(store, 2444)
+    t.eq(n, 2, "two observations")
+    t.eq(cycles, 5, "but five cycles of evidence")
+    t.near(mean, (1054 + 4344) / 5, 1e-9)
+    t.ok(mean > 1075, "so the four-cycle figure pulls the mean towards itself")
+    t.lt(mean, 1086, "without swamping the one-cycle reading entirely")
+end)
+
+t.test("a single-cycle observation is unweighted", function()
+    local store = {}
+    Timers.NoteGap(store, 2444, 1054, 1100)
+    local _, mean = Timers.GapStats(store, 2444)
+    t.near(mean, 1054, 1e-9)
+end)
+
 t.test("stats on a zone with nothing observed yield nothing", function()
     t.eq(Timers.GapStats({}, 2512), nil)
     t.eq(Timers.GapStats(nil, 2512), nil)
