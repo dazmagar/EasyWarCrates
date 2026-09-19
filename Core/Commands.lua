@@ -46,8 +46,6 @@ HANDLERS.map = function()
     ns.Print("|cff777777mapType 3 is Zone; the walk stops at the first one it meets|r")
 end
 
--- The important one on a new patch. Prints every vignette the game reports,
--- whether or not we recognise it, so a renumbered crate id is visible at once.
 -- Groundwork for routing. A route has to know how long it takes to get from
 -- one zone to the next, and before inventing a number it is worth finding out
 -- whether the six zones even share a coordinate space -- Coiled Isle sounds
@@ -90,6 +88,8 @@ HANDLERS.geo = function()
     end
 end
 
+-- The important one on a new patch. Prints every vignette the game reports,
+-- whether or not we recognise it, so a renumbered crate id is visible at once.
 HANDLERS.scan = function()
     local list, rawMap, zoneID = ns.Scanner.Sweep()
     ns.Print(("scan on map %s -> %s -- %d vignettes"):format(
