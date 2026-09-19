@@ -22,15 +22,22 @@ local announced = {}
 
 local TRACK_STALE = 60  -- seconds a track may go unseen before it is dropped
 
--- VIGNETTES_UPDATED alone is not enough to fly a heading off. It is documented
--- as firing when the vignette SET changes, and a transport crossing a zone is
--- one unchanging vignette that merely moves -- so the event may fire a handful
--- of times across a 70-second flight, which is nowhere near the sample count a
--- regression needs. CrateTrackerZK does not trust the event either; it samples
--- on its own 0.25s ticker. So the event opens a track and this poll feeds it.
+-- VIGNETTES_UPDATED alone is not enough to fly a heading off: it fires when the
+-- vignette SET changes, and a transport crossing a zone is one unchanging
+-- vignette that merely moves. So the event opens a track and this poll feeds it.
 --
--- The ticker only runs while something is actually in the air.
-local POLL_INTERVAL = 0.25
+-- Measured in Voidstorm over a 69-second flight: the poll ran at 4Hz and got a
+-- NEW position roughly every 5.5 seconds. GetVignettePosition simply does not
+-- refresh faster than that, so the sample rate is the game's, not ours, and
+-- polling harder buys nothing. Kept at 1Hz, which is well inside that and a
+-- quarter of the wakeups.
+--
+-- The consequence worth knowing before tuning Heading.MIN_SAMPLES: five samples
+-- take about 25 seconds to collect, and that is the whole delay between
+-- spotting a transport and being able to call its target. A transport only
+-- visible for less than that cannot be predicted at all, which is exactly what
+-- happened the first time in Voidstorm.
+local POLL_INTERVAL = 1.0
 local ticker
 
 local function playerMapID()
@@ -84,6 +91,17 @@ local function dropStaleTracks(now)
     end
 end
 
+-- Forgets every transport being tracked in a zone. Called the moment a crate
+-- vignette shows up there: the question the tracking existed to answer has
+-- just been answered by the game.
+function Scanner.EndTracks(zoneID)
+    for guid, tr in pairs(tracks) do
+        if tr.zoneID == zoneID then
+            tracks[guid], announced[guid] = nil, nil
+        end
+    end
+end
+
 -- Re-reads the position of every transport being tracked. Also the place a
 -- track ends: when its vignette stops being "flying" it has either dropped its
 -- crate or despawned, and either way there is nothing left to predict.
@@ -115,25 +133,34 @@ function Scanner.Poll()
     if not next(tracks) then stopPolling() end
 end
 
--- /ewc watch. Without it the addon is silent until it is confident, and
--- silence cannot be told apart from "never saw the plane at all".
-local lastNarrate = 0
+-- /ewc watch. Reports only when something actually changes.
+--
+-- The first cut printed once a second, which produced 47 identical COMMIT
+-- lines for one flight -- the transport holds a steady prediction for as long
+-- as it flies, so a per-second readout is one line of information and forty-six
+-- of noise. What is worth saying is a new sample, or a changed verdict.
 function Scanner.Narrate(now)
     if not (ns.db and ns.db.watch) then return end
-    if now - lastNarrate < 1 then return end
-    lastNarrate = now
 
     for _, tr in pairs(tracks) do
         local fit = tr.track:Fit()
+        local state, line
         if not fit then
-            ns.Print(("|cff777777tracking|r %d samples, not enough to fit yet"):format(tr.track:Count()))
+            state = "wait:" .. tr.track:Count()
+            line = ("|cff777777tracking|r %d sample%s, not enough to fit yet"):format(
+                tr.track:Count(), tr.track:Count() == 1 and "" or "s")
         else
             local r = ns.Predict.Evaluate(ns.GetDropPoints(tr.zoneID), fit)
             local where = r.best and ("%.1f,%.1f"):format(r.best.spot.x * 100, r.best.spot.y * 100) or "-"
-            ns.Print(("|cff777777n=%d span=%.1fs err=%.2fdeg|r  %s -> %s"):format(
+            state = ("%d:%s:%s"):format(fit.n, r.ok and "ok" or tostring(r.reason), where)
+            line = ("|cff777777n=%d span=%.1fs err=%.2fdeg|r  %s -> %s"):format(
                 fit.n, fit.span, math.deg(fit.err),
                 r.ok and "|cff33ff99COMMIT|r" or ("|cffff8800" .. tostring(r.reason) .. "|r"),
-                where))
+                where)
+        end
+        if tr.narrated ~= state then
+            tr.narrated = state
+            ns.Print(line)
         end
     end
 end
@@ -227,9 +254,16 @@ function Scanner.OnVignettesUpdated()
                     Scanner.Evaluate(zoneID, tr)
                 else
                     -- The crate is down, or on its way down. Its own position
-                    -- is the answer, so any guess about it is now worthless.
-                    tracks[guid] = nil
-                    announced[guid] = nil
+                    -- is the answer, so every guess about this zone is now
+                    -- worthless -- including the transport's.
+                    --
+                    -- Clearing tracks[guid] alone is not enough and looked
+                    -- enough: the crate's vignette carries a different GUID
+                    -- from the transport that dropped it, and the transport
+                    -- does not despawn. It lingers and circles its drop point,
+                    -- so its track survived the drop and went on reporting
+                    -- "nothing-ahead" indefinitely.
+                    Scanner.EndTracks(zoneID)
                     if not shard then
                         ns.Debug("crate seen but its GUID carried no shard; not recorded")
                     else

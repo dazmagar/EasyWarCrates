@@ -143,11 +143,26 @@ t.test("samples older than the window are dropped", function()
         string.format("span %.2f should sit inside the %ds window", fit.span, Heading.WINDOW_SECONDS))
 end)
 
-t.test("the window never trims below the minimum sample count", function()
+-- This test used to assert the opposite -- that trimming stops at MIN_SAMPLES
+-- so a quiet transport keeps its heading. In game that let a landed transport
+-- report a fit spanning 86 seconds against a 20-second window, because the
+-- game yields a position only every five seconds and the track therefore sits
+-- at exactly the minimum almost always, so nothing was ever dropped.
+t.test("a stale track reports nothing rather than a heading from a minute ago", function()
     local tr = Heading.NewTrack("l")
     for i = 0, 5 do tr:Add(1000 + i * 100, 0.2 + i * 0.05, 0.5) end
-    t.ok(tr:Count() >= Heading.MIN_SAMPLES,
-        "a quiet transport should keep the heading it had, not lose it")
+    t.lt(tr:Count(), Heading.MIN_SAMPLES, "samples older than the window must be dropped")
+    t.eq(tr:Fit(), nil, "and with too few left there is no honest heading to give")
+end)
+
+t.test("no fit ever spans more than the window", function()
+    local tr = Heading.NewTrack("l2")
+    -- One sample every 5s for two minutes, the cadence seen in game.
+    for i = 0, 23 do tr:Add(1000 + i * 5, 0.2 + i * 0.01, 0.5) end
+    local fit = tr:Fit()
+    t.ok(fit, "a steadily-fed track should still fit")
+    t.ok(fit.span <= Heading.WINDOW_SECONDS,
+        string.format("span %.1fs must stay inside the %ds window", fit.span, Heading.WINDOW_SECONDS))
 end)
 
 t.test("a turning transport reports a larger cross-track residual", function()

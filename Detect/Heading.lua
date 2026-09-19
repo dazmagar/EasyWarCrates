@@ -40,11 +40,21 @@ function Track:Count()
     return self.tail - self.head + 1
 end
 
--- Drops samples that have aged out, never below MIN_SAMPLES: a transport that
--- goes quiet should keep the heading it had, not lose it.
+-- Drops samples that have aged out, unconditionally.
+--
+-- This used to stop at MIN_SAMPLES, on the reasoning that a transport which
+-- goes briefly quiet should keep the heading it had. In the air that reasoning
+-- fails badly: the game only yields a new position every five seconds or so, so
+-- a track sits at exactly MIN_SAMPLES most of the time, nothing was ever
+-- trimmed, and a landed transport went on reporting a fit whose samples spanned
+-- 86 seconds -- a heading from a minute and a half ago, presented as current.
+--
+-- Letting the count fall below the minimum is the honest outcome: Fit then
+-- returns nil, and "I do not know where it is going" is worth more than a
+-- confident answer about the past.
 function Track:Trim(now)
     local cutoff = now - WINDOW_SECONDS
-    while self:Count() > MIN_SAMPLES and self.t[self.head] < cutoff do
+    while self.head <= self.tail and self.t[self.head] < cutoff do
         self.t[self.head], self.x[self.head], self.y[self.head] = nil, nil, nil
         self.head = self.head + 1
     end

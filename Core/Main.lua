@@ -4,10 +4,9 @@ local DEFAULTS = {
     enabled   = true,
     waypoint  = true,   -- drop a map pin on a confident prediction
     verbose   = false,  -- narrate every scan; for diagnosing, not for playing
-    -- On by default at 0.1.0 on purpose. Until a transport has actually been
-    -- watched, an addon that only speaks when it is confident is
-    -- indistinguishable from one that never saw the plane.
-    watch     = true,
+    -- Was on at 0.1.0 so the first flights could be watched at all. They have
+    -- been, and it reports only on change now, but it is still a diagnostic.
+    watch     = false,
     crates    = nil,    -- filled with ns.Timers.New()
     learned   = nil,    -- drop spots the shipped catalogue does not have
 }
