@@ -131,6 +131,11 @@ function Scanner.Poll()
                 if tr.track:Add(now, pos.x, pos.y) then
                     Scanner.Evaluate(tr.zoneID, tr)
                 end
+            elseif tr.track:Count() == 0 then
+                -- Nothing readable and nothing left in the window. Waiting out
+                -- TRACK_STALE would only keep an empty track around to be
+                -- narrated at.
+                tracks[guid], announced[guid] = nil, nil
             end
         end
     end
@@ -153,9 +158,17 @@ function Scanner.Narrate(now)
         local fit = tr.track:Fit()
         local state, line
         if not fit then
-            state = "wait:" .. tr.track:Count()
-            line = ("|cff777777tracking|r %d sample%s, not enough to fit yet"):format(
-                tr.track:Count(), tr.track:Count() == 1 and "" or "s")
+            -- Only while the count is climbing. A track whose samples are
+            -- ageing out of the window counts back down again, and narrating
+            -- "4, 3, 2, 1" on the way to a death that has already been decided
+            -- is not information.
+            local n = tr.track:Count()
+            if n >= (tr.peak or 0) then
+                tr.peak = n
+                state = "wait:" .. n
+                line = ("|cff777777tracking|r %d sample%s, not enough to fit yet"):format(
+                    n, n == 1 and "" or "s")
+            end
         else
             local r = ns.Predict.Evaluate(ns.GetDropPoints(tr.zoneID), fit)
             local where = r.best and ("%.1f,%.1f"):format(r.best.spot.x * 100, r.best.spot.y * 100) or "-"
@@ -165,7 +178,7 @@ function Scanner.Narrate(now)
                 r.ok and "|cff33ff99COMMIT|r" or ("|cffff8800" .. tostring(r.reason) .. "|r"),
                 where)
         end
-        if tr.narrated ~= state then
+        if line and tr.narrated ~= state then
             tr.narrated = state
             ns.Print(line)
         end

@@ -30,6 +30,12 @@ ADDON_FILES = [
 ]
 
 # Create frames and register events at load, so they only run in game.
+#
+# Note on what the syntax pass can and cannot tell you: lupa runs Lua 5.5, and
+# WoW runs a 5.1-based dialect. Anything 5.2+ only -- goto and ::labels:: are
+# the ones that come up -- parses cleanly here and may not in the client. This
+# check catches typos, not version mismatches, so write to 5.1 and do not lean
+# on a green pass as proof a construct is available in game.
 GAME_ONLY_FILES = [
     "Detect/Scanner.lua",
     "Core/Main.lua",
