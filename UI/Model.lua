@@ -18,6 +18,19 @@ ns.Model = Model
 local STALE_CYCLES = 2
 Model.STALE_CYCLES = STALE_CYCLES
 
+-- The crate currently in the air or on the ground in a zone, as the window
+-- needs it, or nil. Split out so the row builder stays testable: the scanner
+-- this reads from cannot run outside the game.
+function Model.LiveFor(zoneID, now)
+    local live = ns.Scanner and ns.Scanner.LiveCrate and ns.Scanner.LiveCrate(zoneID)
+    if not live then return nil end
+    if live.phase == "ground" then
+        return { phase = "ground", since = live.groundAt }
+    end
+    local eta = ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, nil, nil, live.since, now)
+    return { phase = "falling", toGround = eta and eta.toGround or nil, since = live.since }
+end
+
 -- Rows for the window, in the order they should be drawn.
 --
 -- With a route set, its zones come first, planned -- because "when do I leave"
@@ -34,6 +47,7 @@ Model.STALE_CYCLES = STALE_CYCLES
 --   precise     false when seeded from a crate found already on the ground
 --   stale       too many missed cycles to present as live
 --   inRoute     whether this zone is part of the rotation
+--   live        a crate down or falling in that zone now: { phase, toGround }
 --   next        the one row worth acting on
 function Model.BuildRows(db, route, now)
     local rows, seen = {}, {}
@@ -42,7 +56,13 @@ function Model.BuildRows(db, route, now)
         local interval = ns.GetZoneInterval(zoneID)
         local remaining = entry and ns.Timers.Remaining(entry, interval, now)
         local missed = entry and ns.Timers.MissedCycles(entry, interval, now) or 0
+        -- A crate that is in the air or lying there right now outranks the
+        -- countdown to the next one. The timer resets the instant a crate is
+        -- released, so without this the row reads "18:10" at the exact moment
+        -- there is one on the ground to go and collect.
+        local live = ns.Model.LiveFor(zoneID, now)
         rows[#rows + 1] = {
+            live      = live,
             zoneID    = zoneID,
             abbr      = ns.GetZoneAbbr(zoneID),
             shardID   = shardID,

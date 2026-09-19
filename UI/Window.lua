@@ -55,8 +55,13 @@ local function makeRow(parent, index)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine(ns.GetZoneName(d.zoneID))
         GameTooltip:AddLine(("shard %s"):format(tostring(d.shardID or "?")), 0.7, 0.7, 0.7)
+        if d.live then
+            GameTooltip:AddLine(d.live.phase == "ground"
+                and "a crate is on the ground here now"
+                or "a crate is coming down here now", 0.2, 1, 0.2)
+        end
         if d.remaining then
-            GameTooltip:AddLine(("crate drops in %s"):format(
+            GameTooltip:AddLine(("next crate drops in %s"):format(
                 ns.FormatClock(d.remaining):gsub("^%s+", "")), 1, 1, 1)
         else
             GameTooltip:AddLine("never seen a crate here", 0.7, 0.7, 0.7)
@@ -95,7 +100,21 @@ local function paintRow(r, row, isNext)
     local shard = row.shardID and ("|cff777777%s|r"):format(row.shardID) or ""
     r.left:SetText(("%s|cffffffff%s|r %s"):format(mark, row.abbr, shard))
 
-    if not row.remaining then
+    if row.live then
+        -- The crate that is there NOW, in place of the countdown to the next.
+        -- The bar shows the descent rather than the cycle, so a row that is
+        -- about to be worth flying to looks different from one that is not.
+        if row.live.phase == "ground" then
+            r.right:SetText("|cff33ff99ON THE GROUND|r")
+            r.bar:SetValue(1)
+        else
+            r.right:SetText(row.live.toGround
+                and ("|cffffd100landing %s|r"):format(ns.FormatClock(row.live.toGround):gsub("^%s+", ""))
+                or "|cffffd100falling|r")
+            r.bar:SetValue(0.5)
+        end
+        r.bar:SetStatusBarColor(cr, cg, cb, 1)
+    elseif not row.remaining then
         r.right:SetText("|cff777777-- : --|r")
     else
         -- A tilde says the timer was seeded from a crate found already on the

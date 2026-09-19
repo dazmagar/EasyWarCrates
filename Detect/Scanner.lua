@@ -59,6 +59,29 @@ local fallingSince = {}
 -- than any descent observed, shorter than the gap between drops.
 local DESCENT_PAIR_MAX = 300
 
+-- The crate that is in the air or on the ground RIGHT NOW, per zone.
+--
+-- Kept separately from the timer because they answer different questions. The
+-- moment a crate is released the timer resets and starts counting the ~18
+-- minutes to the next one, so the window jumps from 0:05 to 18:10 exactly when
+-- there is a crate lying there to go and take. The countdown is right and
+-- useless; this is what the player actually wants at that moment.
+local liveCrate = {}
+
+-- Stop showing a crate nobody has seen for this long while standing in its
+-- zone. It has been taken, or it was never really there.
+local LIVE_STALE = 90
+
+function Scanner.LiveCrate(zoneID)
+    local live = liveCrate[zoneID]
+    if not live then return nil end
+    if GetServerTime() - (live.seen or 0) > LIVE_STALE then
+        liveCrate[zoneID] = nil
+        return nil
+    end
+    return live
+end
+
 local function fallKey(zoneID, shard) return tostring(zoneID) .. ":" .. tostring(shard) end
 
 local TRACK_STALE = 60  -- seconds a track may go unseen before it is dropped
@@ -123,6 +146,7 @@ function Scanner.Reset()
     spotted = {}
     recentDrop = {}
     fallingSince = {}
+    liveCrate = {}
     stopPolling()
 end
 
@@ -358,6 +382,22 @@ function Scanner.OnVignettesUpdated()
                         ns.Debug("crate seen but its GUID carried no shard; not recorded")
                     else
                         local key = fallKey(zoneID, shard)
+                        if stage == "claimed" then
+                            liveCrate[zoneID] = nil
+                        else
+                            local live = liveCrate[zoneID] or { zoneID = zoneID }
+                            live.shard, live.seen = shard, stamp
+                            live.x, live.y = pos.x, pos.y
+                            if stage == "falling" then
+                                live.phase = "falling"
+                                live.since = live.since or stamp
+                            else
+                                live.phase = "ground"
+                                live.groundAt = live.groundAt or stamp
+                            end
+                            liveCrate[zoneID] = live
+                        end
+
                         if stage == "falling" then
                             fallingSince[key] = fallingSince[key] or stamp
                         elseif stage == "ground" and fallingSince[key] then

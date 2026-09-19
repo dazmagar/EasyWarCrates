@@ -117,3 +117,42 @@ t.test("the freshest shard is the one a zone shows", function()
     t.eq(#rows, 1, "a zone is one row, not one per shard it has ever been on")
     t.eq(rows[1].shardID, 222)
 end)
+
+-- The moment a crate is released the timer resets and starts counting the ~18
+-- minutes to the next one, so without this the row reads "18:10" at exactly
+-- the moment there is a crate lying there to go and collect.
+local function withLive(live, fn)
+    local prev = ns.Scanner
+    ns.Scanner = { LiveCrate = function() return live end }
+    local ok, err = pcall(fn)
+    ns.Scanner = prev
+    if not ok then error(err, 0) end
+end
+
+t.test("a crate on the ground now outranks the countdown to the next", function()
+    withLive({ phase = "ground", groundAt = T0 - 30 }, function()
+        local rows = Model.BuildRows(db({ ZA, 1, T0 - 30 }), nil, T0)
+        t.ok(rows[1].live, "the row has to know there is one down right now")
+        t.eq(rows[1].live.phase, "ground")
+        t.ok(rows[1].remaining, "and still carries the countdown underneath it")
+    end)
+end)
+
+t.test("a crate under its parachute reports how long until it can be taken", function()
+    ns.db = { descent = {} }
+    ns.Airtime.NoteDescent(ns.db.descent, ZA, 86)
+    withLive({ phase = "falling", since = T0 - 20 }, function()
+        local rows = Model.BuildRows(db({ ZA, 1, T0 - 20 }), nil, T0)
+        t.eq(rows[1].live.phase, "falling")
+        t.near(rows[1].live.toGround, 66, 1e-6, "86 measured, 20 of them gone")
+    end)
+    ns.db = nil
+end)
+
+t.test("no live crate leaves the row as it was", function()
+    withLive(nil, function()
+        local rows = Model.BuildRows(db({ ZA, 1, T0 - 100 }), nil, T0)
+        t.eq(rows[1].live, nil)
+        t.ok(rows[1].remaining)
+    end)
+end)
