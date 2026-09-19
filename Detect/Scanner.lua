@@ -19,6 +19,11 @@ local function stampClock() return GetServerTime() end
 local tracks = {}
 -- Last thing we told the player about, so a steady prediction is not repeated.
 local announced = {}
+-- When each zone last had a transport announced, keyed by zone rather than by
+-- track. See the cooldown's use below for why that distinction matters.
+local spotted = {}
+-- Comfortably longer than a flight, so one plane is one announcement.
+local SPOTTED_COOLDOWN = 180
 
 local TRACK_STALE = 60  -- seconds a track may go unseen before it is dropped
 
@@ -79,6 +84,7 @@ end
 function Scanner.Reset()
     tracks = {}
     announced = {}
+    spotted = {}
     stopPolling()
 end
 
@@ -244,8 +250,16 @@ function Scanner.OnVignettesUpdated()
                     if not tr then
                         tr = { track = ns.Heading.NewTrack(guid), guid = guid, zoneID = zoneID }
                         tracks[guid] = tr
-                        ns.Print(("|cffffd100transport spotted|r in %s -- tracking"):format(
-                            ns.GetZoneName(zoneID)))
+                        -- Announced per zone, not per track. A transport's
+                        -- vignette churns -- its GUID comes and goes, and each
+                        -- reappearance builds a fresh track -- which printed
+                        -- "transport spotted" twenty-five times in forty-five
+                        -- seconds for a single plane.
+                        if (tNow - (spotted[zoneID] or -math.huge)) > SPOTTED_COOLDOWN then
+                            spotted[zoneID] = tNow
+                            ns.Print(("|cffffd100transport spotted|r in %s -- tracking"):format(
+                                ns.GetZoneName(zoneID)))
+                        end
                     end
                     tr.zoneID = zoneID
                     tr.lastSeen = tNow

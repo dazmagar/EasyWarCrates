@@ -43,11 +43,69 @@ t.test("spots behind the transport are not candidates", function()
     t.eq(r.reason, "nothing-ahead")
 end)
 
-t.test("a spot the transport is already on top of is not a prediction", function()
-    -- 0.02 ahead, inside MIN_AHEAD: the parachute is about to answer this.
+t.test("a spot the transport has reached is the answer, not a spot to discard", function()
+    -- 0.02 ahead and dead on the ray: the transport has arrived.
     local s = spots({ 0.52, 0.5 })
     local r = Predict.Evaluate(s, fit(0.5, 0.5, 1, 0))
-    t.eq(r.reason, "nothing-ahead")
+    t.ok(r.ok, "should commit on arrival: " .. tostring(r.reason))
+    t.ok(r.arriving)
+    t.eq(r.best.spot, s[1])
+end)
+
+t.test("passing close to a spot but off to the side is not an arrival", function()
+    -- 0.02 ahead but 3% of map to the side, well outside the landing scatter.
+    local s = spots({ 0.52, 0.53 })
+    local r = Predict.Evaluate(s, fit(0.5, 0.5, 1, 0))
+    t.notOk(r.arriving, "arrival is proximity, and this is not near")
+end)
+
+-- Regression, from a flight logged in Zul'Aman on 18 Sep 2026.
+--
+-- The transport was heading for 46.9, 62.3 and that spot ranked first for a
+-- solid minute. 48.9, 69.2 lies further along almost the same bearing, close
+-- enough to hold the verdict at "ambiguous" the whole way in. Then the true
+-- target came within the old MIN_AHEAD filter, was dropped from the candidate
+-- list, and the decoy inherited first place with no rival left -- so the addon
+-- committed, confidently, to a point 7.2% of the map from where the crate
+-- actually landed.
+t.test("nearing the true target does not hand the verdict to the spot behind it", function()
+    local target = { 0.469, 0.623 }
+    local decoy  = { 0.489, 0.692 }
+    local s = spots(target, decoy)
+
+    -- Heading aimed at the target, coming in at an angle that leaves the decoy
+    -- roughly 3 degrees off the ray far out -- which is what the live log
+    -- reported when it went wrong. Not perfectly collinear: that would put both
+    -- spots at zero offset and make the ranking a coin toss rather than a test.
+    local dx, dy = decoy[1] - target[1], decoy[2] - target[2]
+    local len = math.sqrt(dx * dx + dy * dy)
+    local a = math.rad(15)
+    local hx = (dx * math.cos(a) - dy * math.sin(a)) / len
+    local hy = (dx * math.sin(a) + dy * math.cos(a)) / len
+
+    local function approachingBy(gap)
+        return fit(target[1] - gap * hx, target[2] - gap * hy, hx, hy, 0)
+    end
+
+    -- Whether it is confident enough to speak far out is a separate question
+    -- and the log does not settle it: the "2.9 degrees off" it reported was the
+    -- decoy at the moment of the bad call, once the target had already been
+    -- dropped, not the separation on the way in. What the log does establish is
+    -- everything below -- the target must never stop being the front runner,
+    -- and the decoy must never inherit the call.
+    for _, gap in ipairs({ 0.30, 0.20, 0.10, 0.06, 0.03, 0.01 }) do
+        local r = Predict.Evaluate(s, approachingBy(gap))
+        t.eq(r.best.spot, s[1], string.format(
+            "at %.2f out the true target must still rank first", gap))
+        t.notOk(r.ok and r.best.spot == s[2], string.format(
+            "at %.2f out it must never commit to the spot behind the target", gap))
+    end
+
+    -- And on arrival it commits to the right one.
+    local arrived = Predict.Evaluate(s, approachingBy(0.02))
+    t.ok(arrived.ok, "should commit once it is on top of the target")
+    t.eq(arrived.best.spot, s[1])
+    t.ok(arrived.arriving)
 end)
 
 t.test("a heading into empty space commits to nothing", function()

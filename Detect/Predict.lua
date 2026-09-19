@@ -29,10 +29,22 @@ local SCATTER = 0.010
 -- How many sigma of the fit's own heading error to tolerate. The fit reports
 -- err honestly, so this is the only knob that says how brave to be.
 local ERR_SIGMA = 2.5
--- A spot nearer than this along the ray is not a prediction -- the transport
--- is already on top of it, and the parachute vignette is about to answer the
--- question properly.
-local MIN_AHEAD = 0.04
+-- Once the transport is this close to a spot and sitting on the ray, it has
+-- arrived: that spot is the answer by proximity, and no bearing test applies.
+--
+-- This was a candidate FILTER and that was a real bug, caught on a live flight
+-- in Zul'Aman. Discarding anything nearer than this dropped the transport's
+-- actual target out of the running exactly as it reached it. The true spot had
+-- ranked first for a solid minute; the moment it fell inside the filter the
+-- next spot along the same bearing inherited first place, lost its rival, and
+-- the addon committed confidently to a point 7.2% of the map from where the
+-- crate landed. A prediction that gets worse as it gets closer is worse than
+-- no prediction.
+--
+-- It is also where the angular test stops meaning anything: the cone below is
+-- SCATTER/along, which blows up as along goes to zero, so at close range
+-- everything is "within cone" and no margin is ever enough.
+local ARRIVAL = 0.05
 -- Required separation between the best and second spot, as a multiple of the
 -- uncertainty at that range. Roughly one in six geometries puts two spots on
 -- the same line from a given entry edge, and no amount of flying separates
@@ -45,13 +57,20 @@ local function candidates(spots, px, py, hx, hy)
         local s = spots[i]
         local dx, dy = s.x - px, s.y - py
         local along = dx * hx + dy * hy
-        if along >= MIN_AHEAD then
+        if along > 0 then
             local perp = dx * -hy + dy * hx
             if perp < 0 then perp = -perp end
             out[#out + 1] = { spot = s, along = along, perp = perp, tan = perp / along }
         end
     end
-    table.sort(out, function(a, b) return a.tan < b.tan end)
+    -- Angle decides. On a tie the nearer spot wins: two spots exactly on the
+    -- bearing are indistinguishable by angle, and the transport reaches the
+    -- near one first. Without this the order of equals is whatever table.sort
+    -- happens to do, which is not something a waypoint should rest on.
+    table.sort(out, function(a, b)
+        if a.tan == b.tan then return a.along < b.along end
+        return a.tan < b.tan
+    end)
     return out
 end
 Predict.Candidates = candidates
@@ -85,6 +104,14 @@ function Predict.Evaluate(spots, fit)
         angle   = math.atan(best.tan),
     }
 
+    -- Arrival, tested before anything angular and by distance alone. The
+    -- transport is on top of this spot; that is the answer regardless of what
+    -- else shares its bearing further out.
+    if best.along <= ARRIVAL and best.perp <= SCATTER then
+        result.ok, result.arriving = true, true
+        return result
+    end
+
     if best.tan > cone then
         result.ok, result.reason = false, "off-ray"
         return result
@@ -100,5 +127,5 @@ end
 
 Predict.SCATTER   = SCATTER
 Predict.ERR_SIGMA = ERR_SIGMA
-Predict.MIN_AHEAD = MIN_AHEAD
+Predict.ARRIVAL   = ARRIVAL
 Predict.MARGIN    = MARGIN
