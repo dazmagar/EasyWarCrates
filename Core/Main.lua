@@ -61,6 +61,10 @@ end
 ns.lastPrediction = {}
 local PREDICTION_MEMORY = 600  -- a guess older than this is not about this crate
 
+-- Where the pin currently sits per zone, so a crate in view is not re-pinned
+-- once a second for the whole of its fall.
+local pinnedAt = {}
+
 -- Every sighting of a crate's own vignette. This is the truth the prediction
 -- was only guessing at, so it scores the guess, files the landing spot, and
 -- reports the timer -- but only the last of those depends on the timer having
@@ -72,6 +76,18 @@ function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict)
     else
         ns.Debug(("crate %s in %s shard %s -> %s (timer left alone)"):format(
             stage, ns.GetZoneName(zoneID), tostring(shardID), verdict))
+    end
+
+    -- A crate in view beats a crate predicted, so this overrides any pin the
+    -- prediction put down. Flying into a zone where one is already under its
+    -- parachute used to leave the map bare: there is no transport left to
+    -- predict from, and the one position nobody had to guess at -- printed on
+    -- the line above -- was the one never pinned.
+    local prev = pinnedAt[zoneID]
+    if ns.db.waypoint and stage ~= "claimed"
+        and not (prev and math.abs(prev.x - pos.x) < 1e-4 and math.abs(prev.y - pos.y) < 1e-4) then
+        pinnedAt[zoneID] = { x = pos.x, y = pos.y }
+        ns.SetCratePin(zoneID, pos.x, pos.y)
     end
 
     local guess = ns.lastPrediction[zoneID]
