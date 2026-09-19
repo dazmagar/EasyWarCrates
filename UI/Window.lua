@@ -45,10 +45,48 @@ local function makeRow(parent, index)
     r.right:SetPoint("RIGHT", -4, 0)
     r.right:SetJustifyH("RIGHT")
 
+    -- Two bare countdowns side by side are not self-explaining -- the first
+    -- person to see this window asked what they meant, which is the answer.
+    -- The column header above says which is which; this says the rest.
+    r:EnableMouse(true)
+    r:SetScript("OnEnter", function(self)
+        local d = self.data
+        if not d then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(ns.GetZoneName(d.zoneID))
+        GameTooltip:AddLine(("shard %s"):format(tostring(d.shardID or "?")), 0.7, 0.7, 0.7)
+        if d.remaining then
+            GameTooltip:AddLine(("crate drops in %s"):format(
+                ns.FormatClock(d.remaining):gsub("^%s+", "")), 1, 1, 1)
+        else
+            GameTooltip:AddLine("never seen a crate here", 0.7, 0.7, 0.7)
+        end
+        if d.leaveIn then
+            GameTooltip:AddLine(("%s -- %ds from the capital to this zone"):format(
+                d.leaveIn <= 0 and "leave now" or ("leave in " .. ns.FormatClock(d.leaveIn):gsub("^%s+", "")),
+                ns.GetZoneTravel(d.zoneID)), 1, 0.82, 0)
+        end
+        if not d.precise and d.remaining then
+            GameTooltip:AddLine("~ the timer was seeded from a crate already on the ground, "
+                .. "so the cycle is right but its phase is only as good as when it was spotted",
+                1, 0.5, 0.3, true)
+        end
+        if (d.missed or 0) > 0 then
+            GameTooltip:AddLine(("%d cycle%s have passed here unobserved. If the shard changed "
+                .. "in that time this timer means nothing."):format(
+                d.missed, d.missed == 1 and "" or "s"), 1, 0.5, 0.3, true)
+        end
+        GameTooltip:AddLine(("cycle %ds"):format(math.floor(ns.GetZoneInterval(d.zoneID) + 0.5)),
+            0.5, 0.5, 0.5)
+        GameTooltip:Show()
+    end)
+    r:SetScript("OnLeave", GameTooltip_Hide)
+
     return r
 end
 
 local function paintRow(r, row, isNext)
+    r.data = row
     local cr, cg, cb = colourFor(row.zoneID)
     r.bar:SetValue(row.fraction or 0)
     r.bar:SetStatusBarColor(cr, cg, cb, row.stale and 0.25 or 0.75)
@@ -70,8 +108,10 @@ local function paintRow(r, row, isNext)
                 or (row.leaveIn <= 0 and " |cff33ff99GO|r"
                 or (" |cffffd100%s|r"):format(ns.FormatClock(row.leaveIn):gsub("^%s+", "")))
         end
-        local missed = (row.missed or 0) > 0 and ("|cff777777x%d|r "):format(row.missed) or ""
-        r.right:SetText(("%s%s%s"):format(missed, clock, leave))
+        -- The missed-cycle count lives in the tooltip now. On the row it was
+        -- an unexplained "x2" next to two unexplained countdowns, and the
+        -- dimming already says "do not trust this one" without jargon.
+        r.right:SetText(("%s%s"):format(clock, leave))
     end
     r:Show()
 end
@@ -101,7 +141,9 @@ local function refresh()
         frame.empty:Hide()
     end
 
-    frame:SetHeight(46 + math.max(shown, 3) * (ROW_H + ROW_GAP) + PAD)
+    -- No route means no leave column, so the header should not claim one.
+    frame.headRight:SetText((ns.db.route and #ns.db.route > 0) and "drop    leave" or "drop")
+    frame:SetHeight(58 + math.max(shown, 3) * (ROW_H + ROW_GAP) + PAD)
 end
 ns.RefreshWindow = refresh
 
@@ -140,8 +182,19 @@ local function build()
     frame.head:SetPoint("TOPRIGHT", -PAD, -24)
     frame.head:SetJustifyH("LEFT")
 
+    frame.header = CreateFrame("Frame", nil, frame)
+    frame.header:SetPoint("TOPLEFT", PAD, -38)
+    frame.header:SetPoint("TOPRIGHT", -PAD, -38)
+    frame.header:SetHeight(12)
+    local hl = frame.header:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    hl:SetPoint("LEFT", 4, 0)
+    hl:SetText("zone")
+    frame.headRight = frame.header:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    frame.headRight:SetPoint("RIGHT", -4, 0)
+    frame.headRight:SetText("drop    leave")
+
     frame.body = CreateFrame("Frame", nil, frame)
-    frame.body:SetPoint("TOPLEFT", 0, -42)
+    frame.body:SetPoint("TOPLEFT", 0, -54)
     frame.body:SetPoint("BOTTOMRIGHT", 0, PAD)
 
     frame.empty = frame.body:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
