@@ -12,14 +12,43 @@ local ADDON, ns = ...
 -- so a per-zone table would be recording measurement noise as fact. The real
 -- fix is to learn it per shard from consecutive drops, which this leaves room
 -- for rather than pretending to already know.
+-- abbr is what crate farmers actually say, and what the route editor accepts as
+-- input. Taken from WarCrateTracker (MIT, Copyright 2024 Samuel Colburn), which
+-- carries the same set minus its "MID:" prefix.
 local ZONES = {
-    [2395] = { name = "Eversong Woods",  interval = 1100 },
-    [2405] = { name = "Voidstorm",       interval = 1100 },
-    [2413] = { name = "Harandar",        interval = 1100 },
-    [2437] = { name = "Zul'Aman",        interval = 1100 },
-    [2444] = { name = "Slayer's Rise",   interval = 1100 },
-    [2512] = { name = "The Coiled Isle", interval = 1100 },
+    [2395] = { name = "Eversong Woods",  abbr = "EW", interval = 1100 },
+    [2405] = { name = "Voidstorm",       abbr = "VS", interval = 1100 },
+    [2413] = { name = "Harandar",        abbr = "Hd", interval = 1100 },
+    [2437] = { name = "Zul'Aman",        abbr = "ZA", interval = 1100 },
+    [2444] = { name = "Slayer's Rise",   abbr = "SR", interval = 1100 },
+    [2512] = { name = "The Coiled Isle", abbr = "CI", interval = 1100 },
 }
+
+-- Spellings a player might reasonably type for a zone. Deliberately forgiving:
+-- this is parsed from a text box, and being strict about ES versus EW only
+-- makes the route editor annoying.
+local ABBR_ALIAS = {
+    ES = 2395, EW = 2395, EVERSONG = 2395,
+    VS = 2405, VOID = 2405, VOIDSTORM = 2405,
+    HD = 2413, HA = 2413, HARANDAR = 2413,
+    ZA = 2437, ZUL = 2437, ZULAMAN = 2437,
+    SR = 2444, SLAY = 2444,
+    CI = 2512, COIL = 2512, COILED = 2512,
+}
+
+ns.ZONE_BY_ABBR = ABBR_ALIAS
+
+-- Returns a zone id for anything a player might type, or nil.
+function ns.ResolveZoneInput(text)
+    if type(text) ~= "string" then return nil end
+    local key = text:upper():gsub("[^%u]", "")
+    return ABBR_ALIAS[key]
+end
+
+function ns.GetZoneAbbr(zoneID)
+    local z = ZONES[zoneID]
+    return z and z.abbr or tostring(zoneID)
+end
 
 -- Ids that mean one of the zones above but are not it. Core/Zones.lua resolves
 -- ordinary sub-zones by walking the map tree, so this is only for ids the tree

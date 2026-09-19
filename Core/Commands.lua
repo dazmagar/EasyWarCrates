@@ -48,6 +48,48 @@ end
 
 -- The important one on a new patch. Prints every vignette the game reports,
 -- whether or not we recognise it, so a renumbered crate id is visible at once.
+-- Groundwork for routing. A route has to know how long it takes to get from
+-- one zone to the next, and before inventing a number it is worth finding out
+-- whether the six zones even share a coordinate space -- Coiled Isle sounds
+-- like somewhere you take a boat to. C_Map answers for any map id without
+-- having to stand in it, so this asks about all six at once.
+HANDLERS.geo = function()
+    local rects = {}
+    for zoneID in pairs(ns.ZONES) do
+        local info = C_Map.GetMapInfo(zoneID)
+        local parent = info and info.parentMapID
+        local ok, minX, maxX, minY, maxY = pcall(C_Map.GetMapRectOnMap, zoneID, parent or 0)
+        ns.Print(("%-4s %-16s |cff777777parent=%s|r %s"):format(
+            ns.GetZoneAbbr(zoneID), ns.GetZoneName(zoneID), tostring(parent),
+            (ok and minX) and ("rect %.3f-%.3f, %.3f-%.3f"):format(minX, maxX, minY, maxY)
+                or "|cffff8800no rect on parent|r"))
+        if ok and minX then
+            rects[zoneID] = { x = (minX + maxX) / 2, y = (minY + maxY) / 2, parent = parent }
+        end
+    end
+
+    local ids = {}
+    for zoneID in pairs(rects) do ids[#ids + 1] = zoneID end
+    table.sort(ids)
+    if #ids < 2 then
+        return ns.Print("|cffff8800not enough zones share a parent map to measure between them|r")
+    end
+    ns.Print("centre-to-centre distance on the shared parent map:")
+    for i = 1, #ids do
+        for j = i + 1, #ids do
+            local a, b = rects[ids[i]], rects[ids[j]]
+            if a.parent == b.parent then
+                local dx, dy = a.x - b.x, a.y - b.y
+                ns.Print(("  %s <-> %s   %.3f"):format(
+                    ns.GetZoneAbbr(ids[i]), ns.GetZoneAbbr(ids[j]), math.sqrt(dx * dx + dy * dy)))
+            else
+                ns.Print(("  %s <-> %s   |cffff8800different parent maps|r"):format(
+                    ns.GetZoneAbbr(ids[i]), ns.GetZoneAbbr(ids[j])))
+            end
+        end
+    end
+end
+
 HANDLERS.scan = function()
     local list, rawMap, zoneID = ns.Scanner.Sweep()
     ns.Print(("scan on map %s -> %s -- %d vignettes"):format(
@@ -182,6 +224,7 @@ HANDLERS.help = function()
     ns.Print("commands:")
     ns.Print("  /ewc status   -- what zone the addon thinks you are in")
     ns.Print("  /ewc map      -- the map chain above you, and what it resolves to")
+    ns.Print("  /ewc geo      -- where the six zones sit relative to each other")
     ns.Print("  /ewc scan     -- every vignette in range, raw. Use this first on a new patch")
     ns.Print("  /ewc predict  -- live heading fit and where it points")
     ns.Print("  /ewc points   -- catalogued drop spots for this zone")
