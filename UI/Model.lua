@@ -22,13 +22,28 @@ Model.STALE_CYCLES = STALE_CYCLES
 -- needs it, or nil. Split out so the row builder stays testable: the scanner
 -- this reads from cannot run outside the game.
 function Model.LiveFor(zoneID, now)
-    local live = ns.Scanner and ns.Scanner.LiveCrate and ns.Scanner.LiveCrate(zoneID)
-    if not live then return nil end
-    if live.phase == "ground" then
-        return { phase = "ground", since = live.groundAt }
+    local S = ns.Scanner
+    local live = S and S.LiveCrate and S.LiveCrate(zoneID)
+    if live then
+        if live.phase == "ground" then
+            return { phase = "ground", since = live.groundAt, rank = 1 }
+        end
+        local eta = ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, nil, nil, live.since, now)
+        return { phase = "falling", toGround = eta and eta.toGround or nil,
+                 since = live.since, rank = 2 }
     end
-    local eta = ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, nil, nil, live.since, now)
-    return { phase = "falling", toGround = eta and eta.toGround or nil, since = live.since }
+    -- Still in the air. Worth a row of its own: a transport on its way is the
+    -- reason to stay put, and until now the only sign of one was a line of
+    -- text that says nothing about which zone it is in unless you are stood
+    -- in it.
+    if S and S.HasTransport and S.HasTransport(zoneID) then
+        local r = S.Prediction and S.Prediction(zoneID)
+        local eta = r and r.committed
+            and ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, r.fit, r.committed, nil, now,
+                ns.db and ns.db.release)
+        return { phase = "inbound", toGround = eta and eta.toGround or nil, rank = 3 }
+    end
+    return nil
 end
 
 -- Rows for the window, in the order they should be drawn.
@@ -103,6 +118,26 @@ function Model.BuildRows(db, route, now)
         return ra < rb
     end)
     for _, o in ipairs(others) do add(o.zoneID, o.entry, o.shardID, nil) end
+
+    -- A zone with something happening but no timer would otherwise have no row
+    -- at all, which is the case whenever you fly somewhere new or return on a
+    -- shard you have not seen -- exactly when you most want to know whether
+    -- there is anything there.
+    for zoneID in pairs((ns.Scanner and ns.Scanner.ActiveZones and ns.Scanner.ActiveZones()) or {}) do
+        if not seen[zoneID] then add(zoneID, nil, nil, nil) end
+    end
+
+    -- Anything live floats to the top, most urgent first: a crate on the
+    -- ground can be taken now, one under a parachute shortly, a transport
+    -- eventually. Everything else keeps the order it was built in.
+    local order = {}
+    for i, r in ipairs(rows) do order[r] = i end
+    table.sort(rows, function(a, b)
+        local ra = a.live and a.live.rank or 99
+        local rb = b.live and b.live.rank or 99
+        if ra ~= rb then return ra < rb end
+        return order[a] < order[b]
+    end)
 
     return rows, nextRow
 end

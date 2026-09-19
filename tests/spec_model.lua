@@ -156,3 +156,53 @@ t.test("no live crate leaves the row as it was", function()
         t.ok(rows[1].remaining)
     end)
 end)
+
+-- Flying into a zone whose timer you do not have -- a new zone, or one on a
+-- shard you have not seen -- used to produce no row at all, so the window was
+-- silent at exactly the moment something was happening there.
+t.test("a zone with a live crate gets a row even with no timer", function()
+    local prev = ns.Scanner
+    ns.Scanner = {
+        LiveCrate = function(z) return z == SR and { phase = "ground", groundAt = T0 } or nil end,
+        ActiveZones = function() return { [SR] = true } end,
+    }
+    local rows = Model.BuildRows(Timers.New(), nil, T0)
+    ns.Scanner = prev
+    t.eq(#rows, 1)
+    t.eq(rows[1].zoneID, SR)
+    t.eq(rows[1].remaining, nil, "nothing is known about its cycle")
+    t.eq(rows[1].live.phase, "ground", "but there is a crate there right now")
+end)
+
+t.test("a transport still in the air is reason enough for a row", function()
+    local prev = ns.Scanner
+    ns.Scanner = {
+        LiveCrate = function() return nil end,
+        HasTransport = function(z) return z == VS end,
+        Prediction = function() return nil end,
+        ActiveZones = function() return { [VS] = true } end,
+    }
+    local rows = Model.BuildRows(Timers.New(), nil, T0)
+    ns.Scanner = prev
+    t.eq(#rows, 1)
+    t.eq(rows[1].live.phase, "inbound")
+end)
+
+t.test("live zones float above the countdowns, most urgent first", function()
+    local prev = ns.Scanner
+    local live = {
+        [SR] = { phase = "falling", since = T0 - 10 },
+        [VS] = { phase = "ground", groundAt = T0 - 5 },
+    }
+    ns.Scanner = {
+        LiveCrate = function(z) return live[z] end,
+        HasTransport = function() return false end,
+        ActiveZones = function() return { [SR] = true, [VS] = true } end,
+    }
+    -- ZA drops soonest, so on countdown alone it would lead.
+    local rows = Model.BuildRows(db({ ZA, 1, T0 - 1000 }, { SR, 2, T0 }, { VS, 3, T0 }), nil, T0)
+    ns.Scanner = prev
+    t.eq(rows[1].zoneID, VS, "one you can pick up now comes first")
+    t.eq(rows[2].zoneID, SR, "then one about to land")
+    t.eq(rows[3].zoneID, ZA, "then the soonest countdown")
+end)

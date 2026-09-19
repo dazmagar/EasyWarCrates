@@ -56,9 +56,10 @@ local function makeRow(parent, index)
         GameTooltip:AddLine(ns.GetZoneName(d.zoneID))
         GameTooltip:AddLine(("shard %s"):format(tostring(d.shardID or "?")), 0.7, 0.7, 0.7)
         if d.live then
-            GameTooltip:AddLine(d.live.phase == "ground"
-                and "a crate is on the ground here now"
-                or "a crate is coming down here now", 0.2, 1, 0.2)
+            GameTooltip:AddLine(
+                d.live.phase == "ground" and "a crate is on the ground here now"
+                or d.live.phase == "falling" and "a crate is coming down here now"
+                or "a transport is in the air here", 0.2, 1, 0.2)
         end
         if d.remaining then
             GameTooltip:AddLine(("next crate drops in %s"):format(
@@ -107,11 +108,16 @@ local function paintRow(r, row, isNext)
         if row.live.phase == "ground" then
             r.right:SetText("|cff33ff99ON THE GROUND|r")
             r.bar:SetValue(1)
-        else
+        elseif row.live.phase == "falling" then
             r.right:SetText(row.live.toGround
                 and ("|cffffd100landing %s|r"):format(ns.FormatClock(row.live.toGround):gsub("^%s+", ""))
                 or "|cffffd100falling|r")
-            r.bar:SetValue(0.5)
+            r.bar:SetValue(0.6)
+        else
+            r.right:SetText(row.live.toGround
+                and ("|cffffd100inbound %s|r"):format(ns.FormatClock(row.live.toGround):gsub("^%s+", ""))
+                or "|cffffd100inbound|r")
+            r.bar:SetValue(0.3)
         end
         r.bar:SetStatusBarColor(cr, cg, cb, 1)
     elseif not row.remaining then

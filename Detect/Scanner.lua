@@ -74,6 +74,26 @@ local liveCrate = {}
 -- zone. It has been taken, or it was never really there.
 local LIVE_STALE = 90
 
+-- Is a transport being tracked here right now? A crate that has not been
+-- released yet is still something happening in the zone, and the window has
+-- nothing else to learn it from.
+function Scanner.HasTransport(zoneID)
+    return tracks[zoneID] ~= nil
+end
+
+-- Every zone with something going on: a transport up, or a crate falling or
+-- down. The window needs this to give such a zone a row even when it has no
+-- timer at all -- which is exactly the case when you fly somewhere new, or
+-- back into a zone on a shard you have not seen.
+function Scanner.ActiveZones()
+    local out = {}
+    for zoneID in pairs(tracks) do out[zoneID] = true end
+    for zoneID in pairs(liveCrate) do
+        if Scanner.LiveCrate(zoneID) then out[zoneID] = true end
+    end
+    return out
+end
+
 function Scanner.LiveCrate(zoneID)
     local live = liveCrate[zoneID]
     if not live then return nil end
