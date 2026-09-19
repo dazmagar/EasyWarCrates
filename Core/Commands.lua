@@ -438,6 +438,43 @@ HANDLERS.offsets = function()
     ns.Print("|cff777777a shard number is per-zone, so equal numbers in two zones mean nothing|r")
 end
 
+-- Place a waypoint right here, right now, reporting every step.
+--
+-- The pin failed to appear twice with nothing on screen to say why, and the
+-- prediction path cannot be re-run on demand -- it needs a transport in the
+-- air. This takes the question away from crate timing entirely: run it
+-- standing anywhere and the answer is on screen in five lines.
+HANDLERS.pin = function()
+    local raw = C_Map.GetBestMapForUnit("player")
+    local zoneID = raw and ns.Zones.Normalize(raw)
+    ns.Print(("setting enabled: %s"):format(tostring(ns.db.waypoint)))
+    ns.Print(("standing on map %s, which resolves to %s"):format(
+        tostring(raw), zoneID and (ns.GetZoneName(zoneID) .. " (" .. zoneID .. ")") or "nothing"))
+    ns.Print(("game allows a pin -- on %s: %s | on %s: %s"):format(
+        tostring(raw), tostring(raw and C_Map.CanSetUserWaypoint(raw)),
+        tostring(zoneID), tostring(zoneID and C_Map.CanSetUserWaypoint(zoneID))))
+
+    local pos = zoneID and C_Map.GetPlayerMapPosition(zoneID, "player")
+    if not pos then
+        return ns.Print("|cffff8800cannot read your position on the zone map -- nothing to test with|r")
+    end
+    local x, y = pos:GetXY()
+    C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(zoneID, x, y))
+    C_SuperTrack.SetSuperTrackedUserWaypoint(true)
+
+    local back = C_Map.GetUserWaypoint()
+    if not back then
+        ns.Print("|cffff5555the pin did not take -- SetUserWaypoint was refused|r")
+    else
+        ns.Print(("|cff33ff99pin is set|r on map %s at %.1f, %.1f"):format(
+            tostring(back.uiMapID), back.position.x * 100, back.position.y * 100))
+        ns.Print(("supertracked: %s |cff777777(this is what puts the arrow on the minimap)|r"):format(
+            tostring(C_SuperTrack.IsSuperTrackingUserWaypoint and
+                C_SuperTrack.IsSuperTrackingUserWaypoint() or "?")))
+        ns.Print("|cff777777it was placed where you are standing -- open the map and look|r")
+    end
+end
+
 HANDLERS.watch = function()
     ns.db.watch = not ns.db.watch
     ns.Print("live tracking readout " .. (ns.db.watch and "on" or "off"))
@@ -463,6 +500,7 @@ HANDLERS.help = function()
     ns.Print("commands:")
     ns.Print("  /ewc window   -- show or hide the tracker window")
     ns.Print("  /ewc config   -- open the settings panel")
+    ns.Print("  /ewc pin      -- test placing a map pin where you stand")
     ns.Print("  /ewc status   -- what zone the addon thinks you are in")
     ns.Print("  /ewc map      -- the map chain above you, and what it resolves to")
     ns.Print("  /ewc geo      -- where the six zones sit relative to each other")

@@ -196,11 +196,14 @@ function ns.OnPrediction(zoneID, result, fit)
         -- Read back rather than trusting the call. A pin that did not take is
         -- exactly as useful as no pin, and the point of saying so is to find
         -- out which happened.
+        -- Success reported too. Staying quiet on success made "no message"
+        -- mean either "it worked" or "you are running an older build", and
+        -- those needed telling apart while the pin was not appearing.
         local set = C_Map.GetUserWaypoint()
         if not set then
             ns.Print("  |cffff8800the map pin did not take|r")
         else
-            ns.Debug("map pin set")
+            ns.Print(("  |cff777777map pin set on %s|r"):format(ns.GetZoneName(zoneID)))
         end
     end
 end
