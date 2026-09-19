@@ -9,6 +9,7 @@ local DEFAULTS = {
     watch     = false,
     crates    = nil,    -- filled with ns.Timers.New()
     learned   = nil,    -- drop spots the shipped catalogue does not have
+    gaps      = nil,    -- observed intervals between drops
 }
 
 local PREFIX = "|cff33ddaa[EWC]|r "
@@ -33,6 +34,7 @@ local function applyDefaults(db)
     -- downstream, it is a module that quietly stops working.
     db.crates  = db.crates or ns.Timers.New()
     db.learned = db.learned or {}
+    db.gaps    = db.gaps or {}
     return db
 end
 
@@ -77,6 +79,22 @@ function ns.OnCrateRecorded(zoneID, shardID, stage, pos)
         -- what Learn expects, which is a bug on this side, not a bad crate.
         ns.Print(("  |cffff5555could not record this spot|r (store=%s, %.4f %.4f)"):format(
             type(ns.db.learned), pos.x, pos.y))
+    end
+end
+
+-- Two drops seen in the same zone and shard. The gap between them is the only
+-- direct measurement of the respawn interval anyone gets, and the three addons
+-- that ship a figure disagree about it, so it is worth saying out loud.
+function ns.OnGapObserved(zoneID, shardID, noted)
+    local n, mean, lo, hi = ns.Timers.GapStats(ns.db.gaps, zoneID)
+    ns.Print(("|cff33ff99interval measured|r in %s shard %s: |cffffd100%ds|r%s"):format(
+        ns.GetZoneName(zoneID), tostring(shardID), math.floor(noted.gap + 0.5),
+        noted.cycles > 1 and (" over %d cycles = %ds each"):format(
+            noted.cycles, math.floor(noted.per + 0.5)) or ""))
+    if n > 1 then
+        ns.Print(("  %d observations here: mean %ds, range %d-%d  |cff777777(shipped: %ds)|r"):format(
+            n, math.floor(mean + 0.5), math.floor(lo + 0.5), math.floor(hi + 0.5),
+            ns.GetZoneInterval(zoneID)))
     end
 end
 

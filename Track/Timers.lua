@@ -83,11 +83,63 @@ function Timers.Record(db, zoneID, shardID, ts, source)
         return "duplicate", entry
     end
 
+    -- A genuinely later drop on the same zone and shard. The gap to the
+    -- previous one is the only direct measurement of the respawn interval
+    -- anybody gets, so it is kept before the timestamp is overwritten.
+    entry.prevTs = entry.ts
+    entry.gap = gap
     entry.ts = ts
     entry.source = source or "manual"
     entry.precise = rank(source) >= 2
     entry.seen = 1
-    return "new", entry
+    return "new", entry, gap
+end
+
+-- Sanity bounds on an observed gap, in seconds. Deliberately wide.
+--
+-- The three addons that ship an interval disagree -- 1095, 1098 and 1100 --
+-- and HGLog only accepts an observation between 1090 and 1105, which means its
+-- learning can confirm the figure it was given and can never discover a
+-- different one. A band that narrow is not a measurement, it is an assumption
+-- wearing a measurement's clothes. These bounds exist only to reject a gap
+-- that is obviously not one cycle.
+local GAP_MIN, GAP_MAX = 240, 7200
+Timers.GAP_MIN, Timers.GAP_MAX = GAP_MIN, GAP_MAX
+
+-- Files an observed gap. cycles says how many drops it spans: sitting in one
+-- zone watching gives 1, and anything more is a gap across drops that were
+-- missed, which still measures the interval but less sharply.
+--
+-- Raw observations are kept rather than folded into a running mean. The point
+-- of collecting these is to find out what the interval IS, and a mean cannot
+-- show whether the values cluster tightly or scatter.
+function Timers.NoteGap(store, zoneID, gap, expected)
+    if type(store) ~= "table" or not zoneID then return nil end
+    gap = tonumber(gap)
+    if not gap or gap < GAP_MIN or gap > GAP_MAX then return nil end
+
+    expected = tonumber(expected) or 1100
+    local cycles = math.max(1, math.floor(gap / expected + 0.5))
+
+    store[zoneID] = store[zoneID] or {}
+    local list = store[zoneID]
+    list[#list + 1] = { gap = gap, cycles = cycles, per = gap / cycles }
+    while #list > 50 do table.remove(list, 1) end
+    return list[#list]
+end
+
+-- count, mean, min, max over the single-cycle observations for a zone, or nil.
+function Timers.GapStats(store, zoneID)
+    local list = store and store[zoneID]
+    if not list or #list == 0 then return nil end
+    local sum, lo, hi, n = 0, nil, nil, 0
+    for _, g in ipairs(list) do
+        n = n + 1
+        sum = sum + g.per
+        if not lo or g.per < lo then lo = g.per end
+        if not hi or g.per > hi then hi = g.per end
+    end
+    return n, sum / n, lo, hi
 end
 
 function Timers.NextSpawn(entry, interval, now)

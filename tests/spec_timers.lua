@@ -136,6 +136,77 @@ t.test("a timestamp from the future is carried, not corrected", function()
     t.eq(Timers.MissedCycles(e, INTERVAL, T0), 0)
 end)
 
+-- The respawn interval is the one number three separate addons disagree about
+-- (1095, 1098, 1100) and none of them measured. The gap between two drops in
+-- one zone on one shard is the only direct observation of it.
+t.test("a second drop reports the gap to the first", function()
+    local db = Timers.New()
+    Timers.Record(db, 2512, 42, T0, "falling")
+    local verdict, entry, gap = Timers.Record(db, 2512, 42, T0 + 1097, "falling")
+    t.eq(verdict, "new")
+    t.eq(gap, 1097)
+    t.eq(entry.prevTs, T0, "the previous drop is kept, not just overwritten")
+end)
+
+t.test("a duplicate sighting is not a gap", function()
+    local db = Timers.New()
+    Timers.Record(db, 2512, 42, T0, "flying")
+    local _, _, gap = Timers.Record(db, 2512, 42, T0 + 60, "ground")
+    t.eq(gap, nil, "the same crate seen twice measures nothing")
+end)
+
+t.test("an observed gap is filed as it was seen", function()
+    local store = {}
+    local noted = Timers.NoteGap(store, 2512, 1097, 1100)
+    t.eq(noted.gap, 1097)
+    t.eq(noted.cycles, 1)
+    t.eq(noted.per, 1097)
+end)
+
+-- The reason the bounds are wide. HGLog accepts an observation only between
+-- 1090 and 1105, so its learning can confirm the figure it shipped with and
+-- can never find a different one. A measurement that can only agree with the
+-- assumption is not a measurement.
+t.test("a gap outside the shipped interval is still recorded", function()
+    local store = {}
+    t.ok(Timers.NoteGap(store, 2512, 1042, 1100), "1042 must not be rejected for disagreeing")
+    t.ok(Timers.NoteGap(store, 2512, 1160, 1100), "nor 1160")
+    t.eq(#store[2512], 2)
+end)
+
+t.test("a gap that is obviously not one cycle is divided, not discarded", function()
+    local store = {}
+    local noted = Timers.NoteGap(store, 2512, 3300, 1100)
+    t.eq(noted.cycles, 3, "three drops, two of them missed")
+    t.eq(noted.per, 1100)
+end)
+
+t.test("nonsense gaps are refused", function()
+    local store = {}
+    t.eq(Timers.NoteGap(store, 2512, 30, 1100), nil, "half a minute is not a cycle")
+    t.eq(Timers.NoteGap(store, 2512, 99999, 1100), nil)
+    t.eq(Timers.NoteGap(store, 2512, nil, 1100), nil)
+    t.eq(Timers.NoteGap(nil, 2512, 1100, 1100), nil)
+    t.eq(next(store), nil)
+end)
+
+t.test("stats report the spread, not just an average", function()
+    local store = {}
+    Timers.NoteGap(store, 2512, 1095, 1100)
+    Timers.NoteGap(store, 2512, 1100, 1100)
+    Timers.NoteGap(store, 2512, 1105, 1100)
+    local n, mean, lo, hi = Timers.GapStats(store, 2512)
+    t.eq(n, 3)
+    t.near(mean, 1100, 1e-9)
+    t.eq(lo, 1095)
+    t.eq(hi, 1105, "whether these cluster or scatter is the whole question")
+end)
+
+t.test("stats on a zone with nothing observed yield nothing", function()
+    t.eq(Timers.GapStats({}, 2512), nil)
+    t.eq(Timers.GapStats(nil, 2512), nil)
+end)
+
 t.test("sorting an empty database is not an error", function()
     t.eq(#Timers.Sorted(Timers.New(), function() return INTERVAL end, T0), 0)
     t.eq(#Timers.Sorted(nil, function() return INTERVAL end, T0), 0)

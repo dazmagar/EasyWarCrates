@@ -199,6 +199,32 @@ HANDLERS.shard = function()
     ns.Print("|cff777777the two should agree. If they do not, the vignette layout differs.|r")
 end
 
+-- Every gap between two drops this client has actually seen. The point of
+-- sitting in one zone through two drops is to fill this in.
+HANDLERS.interval = function()
+    local any = false
+    for zoneID in pairs(ns.ZONES) do
+        local list = (ns.db.gaps or {})[zoneID]
+        if list and #list > 0 then
+            any = true
+            local n, mean, lo, hi = ns.Timers.GapStats(ns.db.gaps, zoneID)
+            ns.Print(("%s |cff777777(shipped %ds)|r  %d observation%s, mean |cffffd100%ds|r, range %d-%d"):format(
+                ns.GetZoneName(zoneID), ns.GetZoneInterval(zoneID),
+                n, n == 1 and "" or "s",
+                math.floor(mean + 0.5), math.floor(lo + 0.5), math.floor(hi + 0.5)))
+            for _, g in ipairs(list) do
+                ns.Print(("   %ds%s"):format(math.floor(g.gap + 0.5),
+                    g.cycles > 1 and (" over %d cycles = %ds each"):format(
+                        g.cycles, math.floor(g.per + 0.5)) or ""))
+            end
+        end
+    end
+    if not any then
+        ns.Print("no intervals measured yet. Sit in one zone through two drops on the same shard.")
+        ns.Print("|cff777777for reference: CrateTrackerZK ships 1100, RCT 1098-1099, WarCrateTracker 1095|r")
+    end
+end
+
 HANDLERS.watch = function()
     ns.db.watch = not ns.db.watch
     ns.Print("live tracking readout " .. (ns.db.watch and "on" or "off"))
@@ -229,6 +255,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc predict  -- live heading fit and where it points")
     ns.Print("  /ewc points   -- catalogued drop spots for this zone")
     ns.Print("  /ewc timers   -- tracked crate timers")
+    ns.Print("  /ewc interval -- measured gaps between drops, per zone")
     ns.Print("  /ewc shard    -- cross-check the shard number against a creature GUID")
     ns.Print("  /ewc watch    -- toggle the live readout while a transport is tracked")
     ns.Print("  /ewc waypoint -- toggle the map pin on a prediction")

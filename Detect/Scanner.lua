@@ -313,7 +313,12 @@ function Scanner.OnVignettesUpdated()
                     if not shard then
                         ns.Debug("crate seen but its GUID carried no shard; not recorded")
                     else
-                        local verdict = ns.Timers.Record(db.crates, zoneID, shard, stamp, stage)
+                        local verdict, _, gap = ns.Timers.Record(db.crates, zoneID, shard, stamp, stage)
+                        if gap then
+                            local noted = ns.Timers.NoteGap(db.gaps, zoneID, gap,
+                                ns.GetZoneInterval(zoneID))
+                            if noted then ns.OnGapObserved(zoneID, shard, noted) end
+                        end
                         if verdict == "new" or verdict == "refined" then
                             ns.OnCrateRecorded(zoneID, shard, stage, pos)
                         else
