@@ -13,6 +13,7 @@ local DEFAULTS = {
     travel    = nil,    -- per-zone capital-to-zone overrides
     route     = nil,    -- the rotation, as zone ids in order
     descent   = nil,    -- measured parachute times, per zone
+    release   = nil,    -- how wrong the release-time estimate runs, per zone
 }
 
 local PREFIX = "|cff33ddaa[EWC]|r "
@@ -41,6 +42,7 @@ local function applyDefaults(db)
     db.travel  = db.travel or {}
     db.route   = db.route or {}
     db.descent = db.descent or {}
+    db.release = db.release or {}
     return db
 end
 
@@ -64,6 +66,24 @@ function ns.OnCrateRecorded(zoneID, shardID, stage, pos)
         local colour = miss <= 1 and "|cff33ff99" or (miss <= 3 and "|cffffd100" or "|cffff5555")
         ns.Print(string.format("  predicted %.1f, %.1f -- %smissed by %.2f%% of map|r",
             guess.x * 100, guess.y * 100, colour, miss))
+
+        -- Score the timing as well as the place. The first flight this ran on
+        -- promised release in 8 seconds and it took 30, which is the kind of
+        -- bias that only shows up by checking rather than by reasoning about
+        -- it -- the transport may well slow on approach, while the fit reports
+        -- an average speed over its whole window.
+        if stage == "falling" and guess.toRelease then
+            local actual = GetServerTime() - guess.at
+            local err = actual - guess.toRelease
+            ns.db.release = ns.db.release or {}
+            local acc = ns.db.release[zoneID] or { n = 0, sum = 0 }
+            acc.n, acc.sum = acc.n + 1, acc.sum + err
+            ns.db.release[zoneID] = acc
+            ns.Print(("  release called at %ds, took %ds -- |cffffd100%+ds|r%s"):format(
+                math.floor(guess.toRelease + 0.5), math.floor(actual + 0.5), math.floor(err + 0.5),
+                acc.n > 1 and ("  |cff777777mean %+ds over %d|r"):format(
+                    math.floor(acc.sum / acc.n + 0.5), acc.n) or ""))
+        end
         ns.lastPrediction[zoneID] = nil
     end
 
@@ -130,6 +150,7 @@ function ns.OnPrediction(zoneID, result, fit)
     local s = result.best.spot
     ns.lastPrediction[zoneID] = { x = s.x, y = s.y, at = GetServerTime() }
     local eta = ns.Airtime.ETA(ns.db.descent, zoneID, fit, s, nil, GetServerTime())
+    ns.lastPrediction[zoneID].toRelease = eta and eta.toRelease
     local when = ""
     if eta then
         when = (", |cffffd100on the ground in %s|r%s"):format(
