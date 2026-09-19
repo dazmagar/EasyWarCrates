@@ -86,13 +86,21 @@ function Timers.Record(db, zoneID, shardID, ts, source)
     -- A genuinely later drop on the same zone and shard. The gap to the
     -- previous one is the only direct measurement of the respawn interval
     -- anybody gets, so it is kept before the timestamp is overwritten.
+    --
+    -- Only when BOTH ends are spawn-anchored. A timer seeded from a crate
+    -- found already lying on the ground is dated to when it was SEEN, which
+    -- can be any point after it landed, so a gap measured against it is not a
+    -- cycle length. One such pair produced 1650 seconds in Zul'Aman, which the
+    -- cycle arithmetic then read as two cycles of 825 -- a number no zone has,
+    -- fed straight back into the countdown.
+    local bothPrecise = entry.precise and rank(source) >= 2
     entry.prevTs = entry.ts
-    entry.gap = gap
+    entry.gap = bothPrecise and gap or nil
     entry.ts = ts
     entry.source = source or "manual"
     entry.precise = rank(source) >= 2
     entry.seen = 1
-    return "new", entry, gap
+    return "new", entry, entry.gap
 end
 
 -- Sanity bounds on an observed gap, in seconds. Deliberately wide.
@@ -105,6 +113,14 @@ end
 -- that is obviously not one cycle.
 local GAP_MIN, GAP_MAX = 240, 7200
 Timers.GAP_MIN, Timers.GAP_MAX = GAP_MIN, GAP_MAX
+
+-- How far from a whole number of cycles a gap may sit and still be treated as
+-- one. Real readings land within a few percent: measured gaps of 1054 to 1125
+-- against an expected 1100 are 0.96 to 1.02 cycles, and a four-cycle gap came
+-- in at 3.95. Fifteen percent is three times the worst of those and still
+-- rejects anything near the midpoint, which is where a bad pairing sits.
+local CYCLE_FIT = 0.15
+Timers.CYCLE_FIT = CYCLE_FIT
 
 -- Files an observed gap. cycles says how many drops it spans: sitting in one
 -- zone watching gives 1, and anything more is a gap across drops that were
@@ -119,7 +135,14 @@ function Timers.NoteGap(store, zoneID, gap, expected)
     if not gap or gap < GAP_MIN or gap > GAP_MAX then return nil end
 
     expected = tonumber(expected) or 1100
-    local cycles = math.max(1, math.floor(gap / expected + 0.5))
+    local ratio = gap / expected
+    local cycles = math.max(1, math.floor(ratio + 0.5))
+
+    -- A gap has to be close to a whole number of cycles to be one. Anything
+    -- near the midpoint is not a run of clean cycles, it is a bad pairing, and
+    -- dividing it anyway invents a per-cycle figure: 1.5 cycles rounds to 2
+    -- and halves into 825 seconds, which looks like data.
+    if math.abs(ratio - cycles) > CYCLE_FIT then return nil end
 
     store[zoneID] = store[zoneID] or {}
     local list = store[zoneID]

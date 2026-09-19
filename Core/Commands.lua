@@ -259,7 +259,11 @@ end
 
 -- Every gap between two drops this client has actually seen. The point of
 -- sitting in one zone through two drops is to fill this in.
-HANDLERS.interval = function()
+HANDLERS.interval = function(rest)
+    if tostring(rest or ""):lower():match("^reset") then
+        ns.db.gaps = {}
+        return ns.Print("interval measurements cleared.")
+    end
     local any = false
     for zoneID in pairs(ns.ZONES) do
         local list = (ns.db.gaps or {})[zoneID]
@@ -459,7 +463,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc route    -- the rotation: what to fly to and when to leave")
     ns.Print("  /ewc travel   -- capital-to-zone flight times used by the route")
     ns.Print("  /ewc timers   -- tracked crate timers")
-    ns.Print("  /ewc interval -- measured gaps between drops, per zone")
+    ns.Print("  /ewc interval -- measured gaps; 'reset' clears them")
     ns.Print("  /ewc offsets  -- whether the zones' cycles sit at a fixed offset")
     ns.Print("  /ewc airtime  -- measured parachute times; 'reset' clears them")
     ns.Print("  /ewc shard    -- cross-check the shard number against a creature GUID")

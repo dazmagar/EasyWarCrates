@@ -155,6 +155,51 @@ t.test("a duplicate sighting is not a gap", function()
     t.eq(gap, nil, "the same crate seen twice measures nothing")
 end)
 
+-- A timer seeded from a crate found already lying on the ground is dated to
+-- when it was SEEN, which is any point after it landed. A gap measured against
+-- that is not a cycle length. One such pair in Zul'Aman came to 1650 seconds,
+-- which the cycle arithmetic read as two cycles of 825 -- a figure no zone has
+-- and one that went straight into the countdown.
+t.test("no gap is reported when either end was seeded from a crate on the ground", function()
+    local db = Timers.New()
+    Timers.Record(db, 2437, 42, T0, "ground")               -- imprecise seed
+    local _, _, gap = Timers.Record(db, 2437, 42, T0 + 1100, "falling")
+    t.eq(gap, nil, "the first end says nothing about when that crate dropped")
+end)
+
+t.test("no gap when the LATER end is the imprecise one", function()
+    local db = Timers.New()
+    Timers.Record(db, 2437, 42, T0, "falling")
+    local _, _, gap = Timers.Record(db, 2437, 42, T0 + 1100, "ground")
+    t.eq(gap, nil)
+end)
+
+t.test("two spawn-anchored ends do give a gap", function()
+    local db = Timers.New()
+    Timers.Record(db, 2437, 42, T0, "falling")
+    local _, _, gap = Timers.Record(db, 2437, 42, T0 + 1090, "falling")
+    t.eq(gap, 1090)
+end)
+
+-- Real readings land within a few percent of a whole cycle. Something halfway
+-- between is a pairing that means something else, and dividing it anyway
+-- invents a per-cycle figure that looks like data.
+t.test("a gap that is not close to a whole number of cycles is refused", function()
+    local store = {}
+    t.eq(Timers.NoteGap(store, 2437, 1650, 1100), nil, "1.5 cycles is not 2 cycles of 825")
+    t.eq(Timers.NoteGap(store, 2437, 1925, 1100), nil, "nor is 1.75")
+    t.eq(next(store), nil)
+end)
+
+t.test("a few percent off a whole cycle is still accepted", function()
+    local store = {}
+    -- The real spread measured live: 1054 to 1125 against an expected 1100.
+    t.ok(Timers.NoteGap(store, 2437, 1054, 1100))
+    t.ok(Timers.NoteGap(store, 2437, 1125, 1100))
+    t.ok(Timers.NoteGap(store, 2437, 4344, 1100), "four cycles, a percent out")
+    t.eq(#store[2437], 3)
+end)
+
 t.test("an observed gap is filed as it was seen", function()
     local store = {}
     local noted = Timers.NoteGap(store, 2512, 1097, 1100)
