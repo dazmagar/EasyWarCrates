@@ -1,0 +1,124 @@
+local ADDON, ns = ...
+
+-- What the window should show, as plain data.
+--
+-- Pure, so tests/ covers it. The frame code that draws these rows cannot be
+-- tested at all, so as little as possible is decided there: it receives a list
+-- and paints it.
+
+local Model = {}
+ns.Model = Model
+
+-- A row whose timer has missed this many cycles is drawn dimmed. It is still
+-- shown -- the zone and shard are worth knowing -- but the countdown is
+-- extrapolation from an observation nobody has confirmed in over an hour, and
+-- it should not sit there looking like the live ones. RCT shows a stale timer
+-- exactly like a fresh one, which is how its Eversong countdown keeps promising
+-- drops that do not come.
+local STALE_CYCLES = 2
+Model.STALE_CYCLES = STALE_CYCLES
+
+-- Rows for the window, in the order they should be drawn.
+--
+-- With a route set, its zones come first, planned -- because "when do I leave"
+-- is the question a rotation asks and a bare countdown does not answer. Any
+-- other zone with a timer follows, so nothing the addon knows is hidden just
+-- because it is off the route.
+--
+--   abbr, zoneID, shardID
+--   remaining   seconds until the drop, nil when nothing is known
+--   leaveIn     seconds until you must set off; nil off-route
+--   status      go | wait | missed | unknown   (route rows only)
+--   fraction    0..1 through the cycle, for the bar
+--   missed      cycles that passed unobserved
+--   precise     false when seeded from a crate found already on the ground
+--   stale       too many missed cycles to present as live
+--   inRoute     whether this zone is part of the rotation
+--   next        the one row worth acting on
+function Model.BuildRows(db, route, now)
+    local rows, seen = {}, {}
+
+    local function add(zoneID, entry, shardID, planned)
+        local interval = ns.GetZoneInterval(zoneID)
+        local remaining = entry and ns.Timers.Remaining(entry, interval, now)
+        local missed = entry and ns.Timers.MissedCycles(entry, interval, now) or 0
+        rows[#rows + 1] = {
+            zoneID    = zoneID,
+            abbr      = ns.GetZoneAbbr(zoneID),
+            shardID   = shardID,
+            remaining = remaining,
+            leaveIn   = planned and planned.leaveIn or nil,
+            status    = planned and planned.status or nil,
+            fraction  = (remaining and interval > 0) and (1 - remaining / interval) or 0,
+            missed    = missed,
+            precise   = entry and entry.precise or false,
+            stale     = missed > STALE_CYCLES,
+            inRoute   = planned ~= nil,
+        }
+        seen[zoneID] = true
+        return rows[#rows]
+    end
+
+    local nextRow
+    if route and #route > 0 then
+        local plan = ns.Route.Plan(db, route, ns.GetZoneInterval, ns.GetZoneTravel, now)
+        local best = ns.Route.Next(plan)
+        for _, planned in ipairs(plan) do
+            local row = add(planned.zoneID, planned.entry, planned.shardID, planned)
+            if planned == best then nextRow = row end
+        end
+    end
+
+    local others = {}
+    for zoneID, shards in pairs(db or {}) do
+        if not seen[zoneID] then
+            local entry, shardID = ns.Route.FreshestForZone(db, zoneID)
+            if entry then others[#others + 1] = { zoneID = zoneID, entry = entry, shardID = shardID } end
+        end
+    end
+    table.sort(others, function(a, b)
+        local ra = ns.Timers.Remaining(a.entry, ns.GetZoneInterval(a.zoneID), now) or math.huge
+        local rb = ns.Timers.Remaining(b.entry, ns.GetZoneInterval(b.zoneID), now) or math.huge
+        if ra == rb then return a.zoneID < b.zoneID end
+        return ra < rb
+    end)
+    for _, o in ipairs(others) do add(o.zoneID, o.entry, o.shardID, nil) end
+
+    return rows, nextRow
+end
+
+-- The line above the rows while a transport is in the air, or nil.
+--
+--   text     what to show
+--   ready    the call is committed and worth acting on
+function Model.Headline(zoneID, now)
+    if not zoneID then return nil end
+    local r = ns.Scanner and ns.Scanner.Prediction and ns.Scanner.Prediction(zoneID)
+    if not r then return nil end
+
+    if r.committed then
+        local where = ("%.1f, %.1f"):format(r.committed.x * 100, r.committed.y * 100)
+        if r.arrived then
+            return { text = ("dropped at %s"):format(where), ready = true }
+        end
+        local eta = ns.Airtime.ETA(ns.db.descent, zoneID, r.fit, r.committed, nil, now, ns.db.release)
+        return {
+            text = eta and ("incoming to %s, down in %s"):format(where, ns.FormatClock(eta.toGround))
+                or ("incoming to %s"):format(where),
+            ready = true,
+        }
+    end
+
+    -- Not committed. The leading candidate is still worth showing, greyed:
+    -- a Zul'Aman flight held the correct spot in first place for a full minute
+    -- before the margin cleared, and saying nothing for that minute is worse
+    -- than saying "probably here, not sure". The waypoint still waits.
+    if r.best then
+        return {
+            text = ("probably %.1f, %.1f (%s)"):format(
+                r.best.spot.x * 100, r.best.spot.y * 100, tostring(r.reason)),
+            ready = false,
+        }
+    end
+    return { text = "transport in the air", ready = false }
+end

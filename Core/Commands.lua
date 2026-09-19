@@ -9,6 +9,11 @@ local function fmtPct(v) return v and string.format("%.1f", v * 100) or "?" end
 
 local HANDLERS = {}
 
+HANDLERS.show = function() ns.ToggleWindow(true) end
+HANDLERS.hide = function() ns.ToggleWindow(false) end
+HANDLERS.window = function() ns.ToggleWindow() end
+HANDLERS.config = function() Settings.OpenToCategory(ns.settingsCategoryID) end
+
 HANDLERS.status = function()
     local rawMap = C_Map.GetBestMapForUnit("player")
     local zoneID = rawMap and ns.Zones.Normalize(rawMap)
@@ -454,6 +459,8 @@ end
 
 HANDLERS.help = function()
     ns.Print("commands:")
+    ns.Print("  /ewc window   -- show or hide the tracker window")
+    ns.Print("  /ewc config   -- open the settings panel")
     ns.Print("  /ewc status   -- what zone the addon thinks you are in")
     ns.Print("  /ewc map      -- the map chain above you, and what it resolves to")
     ns.Print("  /ewc geo      -- where the six zones sit relative to each other")

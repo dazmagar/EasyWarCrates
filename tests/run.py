@@ -29,6 +29,7 @@ ADDON_FILES = [
     "Track/Learn.lua",
     "Track/Route.lua",
     "Track/Airtime.lua",
+    "UI/Model.lua",
 ]
 
 # Create frames and register events at load, so they only run in game.
@@ -42,6 +43,9 @@ GAME_ONLY_FILES = [
     "Detect/Scanner.lua",
     "Core/Main.lua",
     "Core/Commands.lua",
+    "UI/Window.lua",
+    "UI/Minimap.lua",
+    "UI/Settings.lua",
 ]
 
 SPECS = sorted(p.name for p in (ROOT / "tests").glob("spec_*.lua"))

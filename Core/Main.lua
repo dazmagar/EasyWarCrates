@@ -14,6 +14,12 @@ local DEFAULTS = {
     route     = nil,    -- the rotation, as zone ids in order
     descent   = nil,    -- measured parachute times, per zone
     release   = nil,    -- how wrong the release-time estimate runs, per zone
+    minimap     = true,   -- show the minimap button
+    windowShown = true,   -- show the tracker window
+    -- Deliberately absent: minimapAngle and window. They hold where the player
+    -- dragged something, so "unset" is their real state until one is dragged,
+    -- and every reader supplies its own fallback. A default of nothing is not
+    -- a default and does not belong in this table.
 }
 
 local PREFIX = "|cff33ddaa[EWC]|r "
