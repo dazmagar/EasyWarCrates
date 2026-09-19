@@ -159,7 +159,12 @@ HANDLERS.predict = function()
 end
 
 -- The two legs of a crate's flight, and what is known about each.
-HANDLERS.airtime = function()
+HANDLERS.airtime = function(rest)
+    if tostring(rest or ""):lower():match("^reset") then
+        ns.db.descent = {}
+        ns.db.release = {}
+        return ns.Print("parachute and release measurements cleared.")
+    end
     ns.Print("time under the parachute, measured per zone:")
     local any = false
     for zoneID in pairs(ns.ZONES) do
@@ -364,7 +369,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc travel   -- capital-to-zone flight times used by the route")
     ns.Print("  /ewc timers   -- tracked crate timers")
     ns.Print("  /ewc interval -- measured gaps between drops, per zone")
-    ns.Print("  /ewc airtime  -- measured parachute times, per zone")
+    ns.Print("  /ewc airtime  -- measured parachute times; 'reset' clears them")
     ns.Print("  /ewc shard    -- cross-check the shard number against a creature GUID")
     ns.Print("  /ewc watch    -- toggle the live readout while a transport is tracked")
     ns.Print("  /ewc waypoint -- toggle the map pin on a prediction")

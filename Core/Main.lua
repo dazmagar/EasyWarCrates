@@ -53,11 +53,18 @@ end
 ns.lastPrediction = {}
 local PREDICTION_MEMORY = 600  -- a guess older than this is not about this crate
 
--- Called by the scanner when a crate's own vignette pins it down. This is the
--- truth the prediction was only guessing at.
-function ns.OnCrateRecorded(zoneID, shardID, stage, pos)
-    ns.Print(string.format("%s |cffffffffshard %s|r -- crate %s at |cffffd100%.1f, %.1f|r",
-        ns.GetZoneName(zoneID), tostring(shardID), stage, pos.x * 100, pos.y * 100))
+-- Every sighting of a crate's own vignette. This is the truth the prediction
+-- was only guessing at, so it scores the guess, files the landing spot, and
+-- reports the timer -- but only the last of those depends on the timer having
+-- actually moved. verdict is what Timers made of it.
+function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict)
+    if verdict == "new" or verdict == "refined" then
+        ns.Print(string.format("%s |cffffffffshard %s|r -- crate %s at |cffffd100%.1f, %.1f|r",
+            ns.GetZoneName(zoneID), tostring(shardID), stage, pos.x * 100, pos.y * 100))
+    else
+        ns.Debug(("crate %s in %s shard %s -> %s (timer left alone)"):format(
+            stage, ns.GetZoneName(zoneID), tostring(shardID), verdict))
+    end
 
     local guess = ns.lastPrediction[zoneID]
     if guess and (GetServerTime() - guess.at) <= PREDICTION_MEMORY then
@@ -75,7 +82,6 @@ function ns.OnCrateRecorded(zoneID, shardID, stage, pos)
         if stage == "falling" and guess.toRelease then
             local actual = GetServerTime() - guess.at
             local err = actual - guess.toRelease
-            ns.db.release = ns.db.release or {}
             local acc = ns.db.release[zoneID] or { n = 0, sum = 0 }
             acc.n, acc.sum = acc.n + 1, acc.sum + err
             ns.db.release[zoneID] = acc
@@ -91,18 +97,14 @@ function ns.OnCrateRecorded(zoneID, shardID, stage, pos)
     -- somewhere it was passing over.
     if not ns.LANDED_STAGE[stage] then return end
 
-    local verdict = ns.Learn.Note(ns.db.learned, zoneID, pos.x, pos.y)
-    if verdict == "learned" then
+    local learned = ns.Learn.Note(ns.db.learned, zoneID, pos.x, pos.y)
+    if learned == "learned" then
         ns.Print(string.format(
             "  |cff33ff99new drop spot learned|r -- %.1f, %.1f was not in the catalogue",
             pos.x * 100, pos.y * 100))
-    elseif verdict == "reinforced" then
-        ns.Print("  |cff777777confirms a spot you learned earlier|r")
-    elseif verdict == "full" then
+    elseif learned == "full" then
         ns.Print("  |cffff8800this zone has hit its learned-spot cap|r")
-    elseif verdict == "invalid" then
-        -- Never silent. "invalid" means the store or the coordinates were not
-        -- what Learn expects, which is a bug on this side, not a bad crate.
+    elseif learned == "invalid" then
         ns.Print(("  |cffff5555could not record this spot|r (store=%s, %.4f %.4f)"):format(
             type(ns.db.learned), pos.x, pos.y))
     end

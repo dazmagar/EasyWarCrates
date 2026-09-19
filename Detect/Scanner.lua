@@ -45,11 +45,21 @@ local SPOTTED_COOLDOWN = 180
 local recentDrop = {}
 local DROP_COOLDOWN = 120
 
--- When the parachute was first seen in a zone. The descent can only be
--- measured as the gap from this to the crate being on the ground, and it is
--- also what the countdown runs off once the crate is falling.
+-- When the parachute was first seen, keyed by zone AND shard.
+--
+-- Keyed by zone alone it paired the wrong crates. Two drops landed in Slayer's
+-- Rise ninety seconds apart on different shards -- a Horde raid's on one, an
+-- Alliance one on the other, after the player was re-sharded out of a group --
+-- and the descent came out as 154 seconds by timing one crate's parachute
+-- against the other's landing. The true figure was 117. A mis-paired
+-- measurement is worse than a missing one: it looks like data.
 local fallingSince = {}
-Scanner.FallingSince = function(zoneID) return fallingSince[zoneID] end
+
+-- A parachute older than this cannot belong to the landing being timed. Longer
+-- than any descent observed, shorter than the gap between drops.
+local DESCENT_PAIR_MAX = 300
+
+local function fallKey(zoneID, shard) return tostring(zoneID) .. ":" .. tostring(shard) end
 
 local TRACK_STALE = 60  -- seconds a track may go unseen before it is dropped
 
@@ -323,38 +333,36 @@ function Scanner.OnVignettesUpdated()
                     -- The two parachute stages, before anything is recorded:
                     -- the descent is the gap between them, and it is the only
                     -- way to know how long a crate takes to come down.
-                    if stage == "falling" then
-                        fallingSince[zoneID] = fallingSince[zoneID] or stamp
-                    elseif stage == "ground" and fallingSince[zoneID] then
-                        local secs = stamp - fallingSince[zoneID]
-                        fallingSince[zoneID] = nil
-                        if ns.Airtime.NoteDescent(db.descent, zoneID, secs) then
-                            ns.OnDescentMeasured(zoneID, secs)
-                        end
-                    elseif stage == "claimed" then
-                        fallingSince[zoneID] = nil
-                    end
-
                     if not shard then
                         ns.Debug("crate seen but its GUID carried no shard; not recorded")
                     else
+                        local key = fallKey(zoneID, shard)
+                        if stage == "falling" then
+                            fallingSince[key] = fallingSince[key] or stamp
+                        elseif stage == "ground" and fallingSince[key] then
+                            local secs = stamp - fallingSince[key]
+                            fallingSince[key] = nil
+                            if secs <= DESCENT_PAIR_MAX
+                                and ns.Airtime.NoteDescent(db.descent, zoneID, secs) then
+                                ns.OnDescentMeasured(zoneID, secs)
+                            end
+                        elseif stage == "claimed" then
+                            fallingSince[key] = nil
+                        end
+
                         local verdict, _, gap = ns.Timers.Record(db.crates, zoneID, shard, stamp, stage)
                         if gap then
                             local noted = ns.Timers.NoteGap(db.gaps, zoneID, gap,
                                 ns.GetZoneInterval(zoneID))
                             if noted then ns.OnGapObserved(zoneID, shard, noted) end
                         end
-                        if verdict == "new" or verdict == "refined" then
-                            ns.OnCrateRecorded(zoneID, shard, stage, pos)
-                        else
-                            -- Silence here is a real possibility and reads as a
-                            -- bug: the same crate seen as "falling" and then as
-                            -- "ground" a minute later is one crate, and the
-                            -- second sighting is correctly a duplicate. Say so
-                            -- under verbose rather than leaving nothing.
-                            ns.Debug(("crate %s in %s shard %s -> %s (timer left alone)"):format(
-                                stage, ns.GetZoneName(zoneID), tostring(shard), verdict))
-                        end
+                        -- Every sighting, not only the ones that move a timer.
+                        -- Updating the countdown and learning where crates land
+                        -- are separate jobs, and tying them together meant the
+                        -- on-the-ground position -- the best evidence there is
+                        -- -- was discarded whenever the parachute had already
+                        -- been seen, which is the common case.
+                        ns.OnCrateSighted(zoneID, shard, stage, pos, verdict)
                     end
                 end
             end

@@ -24,12 +24,30 @@ def line_of(text: str, pos: int) -> int:
     return text.count("\n", 0, pos) + 1
 
 
+def blank_out(text: str, pattern: re.Pattern) -> str:
+    """Replace each match with spaces, keeping every line number intact."""
+    return pattern.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+
+
+# Long strings first, then comments, then quoted strings. Order matters: a
+# comment inside a string is not a comment, and vice versa.
+LONG_STR = re.compile(r"\[\[.*?\]\]", re.S)
+BLOCK_COMMENT = re.compile(r"--\[\[.*?\]\]", re.S)
+LINE_COMMENT = re.compile(r"--[^\n]*")
+QUOTED = re.compile(r'"(?:\\.|[^"\\\n])*"' r"|'(?:\\.|[^'\\\n])*'")
+
+
 def check_file(path: pathlib.Path) -> list[str]:
     text = path.read_text(encoding="utf-8")
 
-    # Strip comments so a name mentioned in prose is not read as a call.
-    stripped = re.sub(r"--\[\[.*?\]\]", "", text, flags=re.S)
-    stripped = re.sub(r"--[^\n]*", "", stripped)
+    # Blank out anything that is not code. String literals matter as much as
+    # comments here: a format string like "%s (%d)" otherwise reads as a call
+    # to a function named s, which this tool duly reported against Main.lua.
+    # A linter that cries wolf gets switched off, and then it is worth nothing.
+    stripped = blank_out(text, BLOCK_COMMENT)
+    stripped = blank_out(stripped, LONG_STR)
+    stripped = blank_out(stripped, LINE_COMMENT)
+    stripped = blank_out(stripped, QUOTED)
 
     declared: dict[str, int] = {}
     for pattern in (DECL_FUNC, DECL_VAR):
