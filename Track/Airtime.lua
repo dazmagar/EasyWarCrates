@@ -5,21 +5,28 @@ local ADDON, ns = ...
 -- Pure maths, so tests/ covers it.
 --
 -- Two legs. The transport flies to its drop point and releases; the crate then
--- falls under a parachute. Only the second has to be learned.
+-- falls under a parachute.
 --
--- The first is arithmetic: the heading fit already reports the transport's
--- speed, and the prediction already knows which spot it is flying at, so the
--- time to release is the distance between them divided by that speed. RCT
--- learns this leg per drop point with a running mean and will not trust it
--- until four crates have been timed there, which means a zone it has not seen
--- much of says "Learning" instead of a number. Dividing works on the first
--- flight, in a zone nobody has ever visited.
+-- The second cannot be computed -- nothing observable says how high the crate
+-- was released -- so it is measured, per zone. Readings so far: 86, 86, 87 in
+-- three zones, and 98 and 129 in Zul'Aman at the SAME drop point. Thirty-one
+-- seconds apart at one spot means splitting by drop point, as RCT does, would
+-- not fix it; either the descent really varies that much or the measurement
+-- does.
 --
--- The descent genuinely cannot be computed -- nothing observable says how high
--- the crate was released -- so it is measured. Per zone rather than per drop
--- point: RCT splits it by point, which is defensible but collects data an
--- order of magnitude more slowly, and whether the spread within a zone even
--- justifies it is a question the samples will answer later.
+-- The first was built as arithmetic, on the reasoning that the heading fit
+-- already knows the transport's speed and the prediction already knows where
+-- it is going, so the time to release is a division that works on the first
+-- flight in a zone nobody has visited -- where RCT would still say "Learning".
+--
+-- That reasoning has not survived contact. Errors of +16, +22, +29, +31 and
+-- +54 seconds say the transport neither flies straight to its drop point nor
+-- holds its speed, and an estimate that can be out by a factor of three is
+-- worse than a warm-up. Measuring the leg vignette to vignette, which is what
+-- RCT does, has neither problem by construction. Left as it is for now because
+-- the bias correction below keeps it usable and the position prediction --
+-- which is what the addon is actually for -- does not depend on it, but this
+-- is the part to replace next.
 
 local Airtime = {}
 ns.Airtime = Airtime
@@ -109,27 +116,36 @@ end
 
 -- How wrong the raw release estimate runs, pooled across zones.
 --
--- Measured, not assumed: the first two flights it ran on promised release in 8
--- seconds and took 30 and 37. Both late, by 22 and 29, which is a systematic
--- bias rather than noise -- most likely the transport slowing on approach
--- while the heading fit reports an average over its whole window, though the
--- cause does not matter for correcting it.
+-- This started as a correction for what looked like a constant bias: the first
+-- flights promised release in 8 seconds and took 30 and 37. More flights have
+-- made it clear it is not constant. The errors so far run +16, +22, +29, +31
+-- and +54 -- a three-and-a-half-fold spread, which a mean cannot represent.
 --
--- Pooled rather than kept per zone because the cause is not zone-specific and
--- there are very few samples; a per-zone split would just be slower to learn
--- the same number. Applied only once there are at least this many, so a single
--- odd flight cannot swing it.
-local BIAS_MIN_N = 2
+-- The cause is that ToRelease assumes the transport flies straight to its drop
+-- point at the speed it has been holding, and it evidently does neither
+-- reliably. RCT measures this leg vignette to vignette instead, which by
+-- construction has neither the bias nor the spread; the reason given here for
+-- computing it instead -- that measuring needs a warm-up -- bought an estimate
+-- that can be out by a factor of three. That was the wrong trade.
+--
+-- The correction stays, since a late estimate corrected by its mean error is
+-- better than a late one, but it applies only with enough observations to mean
+-- anything, and the spread is reported so nobody reads the countdown as precise.
+local BIAS_MIN_N = 5
 Airtime.BIAS_MIN_N = BIAS_MIN_N
 
+-- mean, n, spread (max error minus min) -- the spread is what says how much to
+-- trust the mean.
 function Airtime.ReleaseBias(store)
-    local n, sum = 0, 0
+    local n, sum, lo, hi = 0, 0, nil, nil
     for _, acc in pairs(store or {}) do
         n = n + (acc.n or 0)
         sum = sum + (acc.sum or 0)
+        if acc.lo and (not lo or acc.lo < lo) then lo = acc.lo end
+        if acc.hi and (not hi or acc.hi > hi) then hi = acc.hi end
     end
-    if n < BIAS_MIN_N then return 0, n end
-    return sum / n, n
+    if n < BIAS_MIN_N then return 0, n, nil end
+    return sum / n, n, (lo and hi) and (hi - lo) or nil
 end
 
 -- Seconds until the transport reaches the spot it was called for. nil when the

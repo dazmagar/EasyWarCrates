@@ -84,6 +84,8 @@ function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict)
             local err = actual - guess.toRelease
             local acc = ns.db.release[zoneID] or { n = 0, sum = 0 }
             acc.n, acc.sum = acc.n + 1, acc.sum + err
+            if not acc.lo or err < acc.lo then acc.lo = err end
+            if not acc.hi or err > acc.hi then acc.hi = err end
             ns.db.release[zoneID] = acc
             ns.Print(("  release called at %ds, took %ds -- |cffffd100%+ds|r%s"):format(
                 math.floor(guess.toRelease + 0.5), math.floor(actual + 0.5), math.floor(err + 0.5),
@@ -143,9 +145,9 @@ function ns.OnGapObserved(zoneID, shardID, noted)
         noted.cycles > 1 and (" over %d cycles = %ds each"):format(
             noted.cycles, math.floor(noted.per + 0.5)) or ""))
     if n > 1 then
-        ns.Print(("  %d observations here: mean %ds, range %d-%d  |cff777777(shipped: %ds)|r"):format(
+        ns.Print(("  %d observations here: mean %ds, range %d-%d  |cff777777(shipped %ds)|r"):format(
             n, math.floor(mean + 0.5), math.floor(lo + 0.5), math.floor(hi + 0.5),
-            ns.GetZoneInterval(zoneID)))
+            ns.GetShippedInterval(zoneID)))
     end
 end
 

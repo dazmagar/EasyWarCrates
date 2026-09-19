@@ -9,10 +9,12 @@ local function fit(x, y, hx, hy, speed)
     return { x = x, y = y, hx = hx, hy = hy, speed = speed or 0.007 }
 end
 
--- The leg that needs no learning. RCT will not give a number for this until it
--- has timed four crates at that exact drop point; the speed is already in the
--- heading fit, so it is a division and works on the first flight in a zone
--- nobody has visited.
+-- The arithmetic itself, which is sound: distance along the heading over the
+-- speed the fit reports. What the flights showed is that its INPUTS do not
+-- hold -- the transport neither flies straight to its drop point nor keeps its
+-- speed -- so the result runs late by anywhere from 16 to 54 seconds. These
+-- tests pin the maths; the bias tests below carry the evidence about how far
+-- it can be trusted.
 t.test("time to release is computed, not learned", function()
     local secs = Airtime.ToRelease(fit(0.20, 0.50, 1, 0), { x = 0.55, y = 0.50 })
     t.near(secs, 0.35 / 0.007, 1e-6, "35% of map at 0.7% per second")
@@ -52,10 +54,13 @@ t.test("measured descents replace the guess", function()
 end)
 
 -- The game keeps drawing a parachute for a crate that is already down, seen
--- lingering eight to ten seconds in Zul'Aman. A reading taken then may run
--- long by about that much, which is the difference between the 98s measured
--- there and the 87s measured cleanly in Harandar -- quite possibly the same
--- descent twice rather than two different zones behaving differently.
+-- lingering eight to ten seconds in Zul'Aman.
+--
+-- The flag was added expecting those readings to run long. They do not,
+-- measurably: Voidstorm's overlapped reading came in at 86 seconds, matching
+-- Harandar's clean 87. So the flag has already earned its place by disproving
+-- the reason it was added, and Zul'Aman's 98 and 129 need some other
+-- explanation.
 t.test("a reading taken with the parachute still drawn is flagged", function()
     local store = {}
     Airtime.NoteDescent(store, ZONE, 87)
@@ -133,10 +138,13 @@ t.test("an unmeasured zone still gives a figure, flagged as a guess", function()
     t.eq(eta.descentN, 0, "the caller decides how to caveat it, but must be able to")
 end)
 
--- Measured, not assumed. Two flights promised release in 8 seconds and took 30
--- and 37 -- both late, by 22 and 29, which is a bias rather than noise.
+-- Measured, not assumed -- and the measurement is what showed the correction
+-- is weaker than it first looked. Five flights have run late by 16, 22, 29, 31
+-- and 54 seconds. Late every time, which is why a correction is still applied,
+-- but across a 38-second spread, which is why it takes five observations
+-- before it applies at all and why the spread is reported alongside it.
 t.test("the release estimate is corrected by the measured bias", function()
-    local bias = { [ZONE] = { n = 2, sum = 22 + 29 } }
+    local bias = { [ZONE] = { n = 5, sum = 5 * 25.5 } }
     local plain = Airtime.ETA({}, ZONE, fit(0.20, 0.50, 1, 0), { x = 0.55, y = 0.50 }, nil, T0)
     local fixed = Airtime.ETA({}, ZONE, fit(0.20, 0.50, 1, 0), { x = 0.55, y = 0.50 }, nil, T0, bias)
     t.near(plain.toRelease, 50, 1e-6, "no bias store, no correction")
@@ -145,24 +153,31 @@ t.test("the release estimate is corrected by the measured bias", function()
     t.near(fixed.toGround, 50 + 25.5 + Airtime.DESCENT_GUESS, 1e-6)
 end)
 
-t.test("one sample is not enough to correct by", function()
-    local bias = { [ZONE] = { n = 1, sum = 29 } }
+t.test("too few samples is not enough to correct by", function()
+    local bias = { [ZONE] = { n = Airtime.BIAS_MIN_N - 1, sum = 29 * (Airtime.BIAS_MIN_N - 1) } }
     local eta = Airtime.ETA({}, ZONE, fit(0.20, 0.50, 1, 0), { x = 0.55, y = 0.50 }, nil, T0, bias)
-    t.near(eta.toRelease, 50, 1e-6, "a single odd flight must not swing it")
-    t.eq(eta.biasN, 1)
+    t.near(eta.toRelease, 50, 1e-6, "a handful of odd flights must not swing it")
+    t.eq(eta.biasN, Airtime.BIAS_MIN_N - 1)
 end)
 
 -- Pooled across zones: the cause is not zone-specific and the samples are few,
 -- so splitting by zone would only be slower to learn the same number.
 t.test("bias pools observations from every zone", function()
-    local bias = { [2444] = { n = 1, sum = 22 }, [2405] = { n = 1, sum = 29 } }
-    local mean, n = Airtime.ReleaseBias(bias)
-    t.eq(n, 2)
-    t.near(mean, 25.5, 1e-9)
+    local bias = {
+        [2444] = { n = 3, sum = 22 + 29 + 31, lo = 22, hi = 31 },
+        [2405] = { n = 2, sum = 16 + 54,      lo = 16, hi = 54 },
+    }
+    local mean, n, spread = Airtime.ReleaseBias(bias)
+    t.eq(n, 5)
+    t.near(mean, (22 + 29 + 31 + 16 + 54) / 5, 1e-9)
+    -- The spread is the point. These five real errors range over 38 seconds,
+    -- so the mean describes them poorly and the readout has to be able to say
+    -- so rather than presenting a countdown as precise.
+    t.eq(spread, 38)
 end)
 
 t.test("a correction cannot drive the estimate below zero", function()
-    local bias = { [ZONE] = { n = 4, sum = -400 } }
+    local bias = { [ZONE] = { n = 6, sum = -600 } }
     local eta = Airtime.ETA({}, ZONE, fit(0.50, 0.50, 1, 0), { x = 0.55, y = 0.50 }, nil, T0, bias)
     t.eq(eta.toRelease, 0)
 end)
