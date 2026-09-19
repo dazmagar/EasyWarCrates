@@ -208,3 +208,35 @@ t.test("a reading with no position is still kept", function()
     t.eq(s[1].x, nil, "unknown, not zero -- the readout says so rather than plotting it at 0,0")
     t.eq(select(2, Airtime.Descent(store, ZONE)), 1, "and it still counts towards the mean")
 end)
+
+-- Flying into a zone where a crate is already on its parachute times however
+-- much of the fall you happened to catch. Seen live in Slayer's Rise: 115
+-- seconds from arriving to the landing, with no way to know how long it had
+-- already been coming down. That is a lower bound, and averaging lower bounds
+-- with real readings pulls the answer down by an unknowable amount.
+t.test("a descent joined mid-fall is kept out of the mean", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 86)
+    Airtime.NoteDescent(store, ZONE, 115, nil, nil, true)
+    local mean, n, lo, hi, _, partial = Airtime.Descent(store, ZONE)
+    t.eq(n, 1, "only the complete reading counts")
+    t.near(mean, 86, 1e-9)
+    t.eq(hi, 86, "the partial one must not widen the range either")
+    t.eq(partial, 1, "but it is counted, so the readout can show it")
+end)
+
+t.test("a partial reading is still stored and visible", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 115, nil, nil, true)
+    local samples = Airtime.DescentSamples(store, ZONE)
+    t.eq(#samples, 1)
+    t.ok(samples[1].partial)
+end)
+
+t.test("with nothing but partial readings the guess still stands", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 115, nil, nil, true)
+    local mean, n = Airtime.Descent(store, ZONE)
+    t.eq(mean, Airtime.DESCENT_GUESS, "a lower bound is not a measurement")
+    t.eq(n, 0)
+end)

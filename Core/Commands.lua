@@ -183,7 +183,8 @@ HANDLERS.airtime = function(rest)
             for _, d in ipairs(ns.Airtime.DescentSamples(ns.db.descent, zoneID) or {}) do
                 ns.Print(("       %3ds  %s%s"):format(math.floor(d.secs + 0.5),
                     d.x and ("|cff777777at %.1f, %.1f|r"):format(d.x, d.y) or "|cff777777spot not recorded|r",
-                    d.overlapped and "  |cffff8800parachute still drawn|r" or ""))
+                    d.partial and "  |cffff8800joined mid-fall, not counted|r"
+                        or (d.overlapped and "  |cffff8800parachute still drawn|r" or "")))
             end
         else
             ns.Print(("  %-3s %3ds  |cff777777guess, nothing measured here|r"):format(

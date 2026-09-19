@@ -54,6 +54,8 @@ local DROP_COOLDOWN = 120
 -- against the other's landing. The true figure was 117. A mis-paired
 -- measurement is worse than a missing one: it looks like data.
 local fallingSince = {}
+-- Keys whose parachute was already in the air when we first saw it.
+local partialFall = {}
 
 -- A parachute older than this cannot belong to the landing being timed. Longer
 -- than any descent observed, shorter than the gap between drops.
@@ -146,6 +148,7 @@ function Scanner.Reset()
     spotted = {}
     recentDrop = {}
     fallingSince = {}
+    partialFall = {}
     liveCrate = {}
     stopPolling()
 end
@@ -371,6 +374,13 @@ function Scanner.OnVignettesUpdated()
                     startPolling()
                     Scanner.Evaluate(zoneID, tr)
                 else
+                    -- Whether we were watching the transport that dropped
+                    -- this, captured before the track is torn down. A descent
+                    -- timed from a parachute we only joined partway through is
+                    -- a lower bound, not a measurement, and averaging it with
+                    -- real ones drags the figure down.
+                    local sawItDrop = tracks[zoneID] ~= nil
+
                     -- The crate is down, or on its way down. Its own position
                     -- is the answer, so every guess about this zone is now
                     -- worthless -- including the transport's.
@@ -405,17 +415,21 @@ function Scanner.OnVignettesUpdated()
                         end
 
                         if stage == "falling" then
-                            fallingSince[key] = fallingSince[key] or stamp
+                            if not fallingSince[key] then
+                                fallingSince[key] = stamp
+                                partialFall[key] = not sawItDrop or nil
+                            end
                         elseif stage == "ground" and fallingSince[key] then
                             local secs = stamp - fallingSince[key]
                             fallingSince[key] = nil
-                            local overlapped = fallingNow[key]
+                            local overlapped, partial = fallingNow[key], partialFall[key]
+                            partialFall[key] = nil
                             if secs <= DESCENT_PAIR_MAX
-                                and ns.Airtime.NoteDescent(db.descent, zoneID, secs, overlapped, pos) then
-                                ns.OnDescentMeasured(zoneID, secs, overlapped)
+                                and ns.Airtime.NoteDescent(db.descent, zoneID, secs, overlapped, pos, partial) then
+                                ns.OnDescentMeasured(zoneID, secs, overlapped, partial)
                             end
                         elseif stage == "claimed" then
-                            fallingSince[key] = nil
+                            fallingSince[key], partialFall[key] = nil, nil
                         end
 
                         local verdict, _, gap = ns.Timers.Record(db.crates, zoneID, shard, stamp, stage)

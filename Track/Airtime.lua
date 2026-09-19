@@ -76,7 +76,7 @@ Airtime.CONFIDENT_N = CONFIDENT_N
 -- Samples are kept individually rather than folded into a running sum, for the
 -- same reason the interval gaps are: with one reading per zone a mean is not a
 -- measurement, and the spread is the thing worth seeing.
-function Airtime.NoteDescent(store, zoneID, seconds, overlapped, pos)
+function Airtime.NoteDescent(store, zoneID, seconds, overlapped, pos, partial)
     if type(store) ~= "table" or not zoneID then return nil end
     seconds = tonumber(seconds)
     if not seconds or seconds < DESCENT_MIN or seconds > DESCENT_MAX then return nil end
@@ -97,6 +97,7 @@ function Airtime.NoteDescent(store, zoneID, seconds, overlapped, pos)
     list[#list + 1] = {
         secs = seconds,
         overlapped = overlapped or nil,
+        partial = partial or nil,
         x = pos and math.floor(pos.x * 1000 + 0.5) / 10 or nil,
         y = pos and math.floor(pos.y * 1000 + 0.5) / 10 or nil,
     }
@@ -104,19 +105,30 @@ function Airtime.NoteDescent(store, zoneID, seconds, overlapped, pos)
     return list[#list]
 end
 
--- mean, n, min, max, overlappedCount -- or the guess with n = 0 when nothing
--- has been measured.
+-- mean, n, min, max, overlappedCount, partialCount -- or the guess with n = 0.
+--
+-- Partial readings are counted and shown but kept out of the mean. Timing a
+-- descent from a parachute that was already in the air when the player arrived
+-- measures however much of the fall they happened to catch, which is a lower
+-- bound on the real figure; averaged in with complete readings it pulls the
+-- answer down by an unknowable amount every time.
 function Airtime.Descent(store, zoneID)
     local list = store and store[zoneID]
     if type(list) ~= "table" or #list == 0 then return DESCENT_GUESS, 0 end
-    local sum, lo, hi, over = 0, nil, nil, 0
+    local sum, n, lo, hi, over, part = 0, 0, nil, nil, 0, 0
     for _, d in ipairs(list) do
-        sum = sum + d.secs
-        if not lo or d.secs < lo then lo = d.secs end
-        if not hi or d.secs > hi then hi = d.secs end
+        if d.partial then
+            part = part + 1
+        else
+            n = n + 1
+            sum = sum + d.secs
+            if not lo or d.secs < lo then lo = d.secs end
+            if not hi or d.secs > hi then hi = d.secs end
+        end
         if d.overlapped then over = over + 1 end
     end
-    return sum / #list, #list, lo, hi, over
+    if n == 0 then return DESCENT_GUESS, 0, nil, nil, over, part end
+    return sum / n, n, lo, hi, over, part
 end
 
 -- The individual readings, for inspection.
