@@ -61,6 +61,27 @@ function Model.LiveFor(zoneID, now)
     return nil
 end
 
+-- Which copy of a zone applies: this client's own reading first, then whoever
+-- in the raid is standing there. nil when nobody knows, which is different
+-- from knowing and finding nothing.
+local function shardHere(zoneID, now)
+    local mine = ns.Scanner and ns.Scanner.CurrentShard
+        and ns.Scanner.CurrentShard(zoneID, now)
+    if mine then return mine, "you" end
+    if ns.Remote then return ns.Remote.ShardFor(ns.remote, zoneID, now) end
+    return nil
+end
+
+-- Spawn to lootable. Both legs are measured now, so this is arithmetic on two
+-- observations rather than a guess: the transport's flight from the moment the
+-- cycle starts, and the fall under the parachute.
+local function groundAt(zoneID, remaining)
+    if not remaining then return nil end
+    local flight = ns.Airtime.Flight(ns.db and ns.db.flight, zoneID)
+    local descent = ns.Airtime.Descent(ns.db and ns.db.descent, zoneID)
+    return remaining + flight + descent
+end
+
 -- Rows for the window, in the order they should be drawn.
 --
 -- With a route set, its zones come first, planned -- because "when do I leave"
@@ -69,22 +90,23 @@ end
 -- because it is off the route.
 --
 --   abbr, zoneID, shardID
---   remaining   seconds until the drop, nil when nothing is known
---   leaveIn     seconds until you must set off; nil off-route
+--   remaining   seconds until the transport appears, nil when nothing is known
+--   onGround    seconds until the crate can be picked up
 --   status      go | wait | missed | unknown   (route rows only)
 --   fraction    0..1 through the cycle, for the bar
 --   missed      cycles that passed unobserved
 --   precise     false when seeded from a crate found already on the ground
 --   stale       too many missed cycles to present as live
---   wrongShard  this timer was learned on a different copy of the zone
---   hereShard   the shard this client is standing in, when known
+--   newShard    the copy of the zone is known and nothing is timed in it
+--   guessedShard the copy is not known, so this timer may be another one's
+--   shardFrom   who said which copy it is: "you", or a raid member's name
 --   inRoute     whether this zone is part of the rotation
 --   live        a crate down or falling in that zone now: { phase, toGround }
 --   next        the one row worth acting on
 function Model.BuildRows(db, route, now)
     local rows, seen = {}, {}
 
-    local function add(zoneID, entry, shardID, planned)
+    local function add(zoneID, entry, shardID, planned, known, shardFrom)
         local interval = ns.GetZoneInterval(zoneID)
         local remaining = entry and ns.Timers.Remaining(entry, interval, now)
         local missed = entry and ns.Timers.MissedCycles(entry, interval, now) or 0
@@ -99,17 +121,20 @@ function Model.BuildRows(db, route, now)
         -- transport comes: the crate is there, its cycle is simply in another
         -- phase. Saying so is the difference between twenty wasted minutes and
         -- knowing to move on.
-        local here = ns.Scanner and ns.Scanner.CurrentShard
-            and ns.Scanner.CurrentShard(zoneID, now)
         rows[#rows + 1] = {
-            wrongShard = (here ~= nil and shardID ~= nil and here ~= shardID) or nil,
-            hereShard  = here,
+            -- The shard is known and nothing has been timed in it. Blank on
+            -- purpose: another copy's countdown here would look like
+            -- knowledge and send a raid somewhere on the strength of it.
+            newShard   = (known and not entry) or nil,
+            -- The shard is not known, so this timer may be for another copy.
+            guessedShard = (not known and entry ~= nil) or nil,
+            shardFrom  = shardFrom,
             live      = live,
             zoneID    = zoneID,
             abbr      = ns.GetZoneAbbr(zoneID),
             shardID   = shardID,
             remaining = remaining,
-            leaveIn   = planned and planned.leaveIn or nil,
+            onGround  = groundAt(zoneID, remaining),
             status    = planned and planned.status or nil,
             fraction  = (remaining and interval > 0) and (1 - remaining / interval) or 0,
             missed    = missed,
@@ -123,10 +148,13 @@ function Model.BuildRows(db, route, now)
 
     local nextRow
     if route and #route > 0 then
-        local plan = ns.Route.Plan(db, route, ns.GetZoneInterval, ns.GetZoneTravel, now)
+        local plan = ns.Route.Plan(db, route, ns.GetZoneInterval,
+            function(zoneID) return (shardHere(zoneID, now)) end, now)
         local best = ns.Route.Next(plan)
         for _, planned in ipairs(plan) do
-            local row = add(planned.zoneID, planned.entry, planned.shardID, planned)
+            local _, from = shardHere(planned.zoneID, now)
+            local row = add(planned.zoneID, planned.entry, planned.shardID, planned,
+                planned.knownShard, from)
             if planned == best then nextRow = row end
         end
     end
@@ -134,8 +162,14 @@ function Model.BuildRows(db, route, now)
     local others = {}
     for zoneID, shards in pairs(db or {}) do
         if not seen[zoneID] then
-            local entry, shardID = ns.Route.FreshestForZone(db, zoneID)
-            if entry then others[#others + 1] = { zoneID = zoneID, entry = entry, shardID = shardID } end
+            local here, from = shardHere(zoneID, now)
+            local entry, shardID, known = ns.Route.EntryFor(db, zoneID, here)
+            -- A zone with a timer for a copy nobody is in has nothing to say
+            -- until somebody goes there, so it does not take a row.
+            if entry or known then
+                others[#others + 1] = { zoneID = zoneID, entry = entry, shardID = shardID,
+                                        known = known, from = from }
+            end
         end
     end
     table.sort(others, function(a, b)
@@ -144,7 +178,9 @@ function Model.BuildRows(db, route, now)
         if ra == rb then return a.zoneID < b.zoneID end
         return ra < rb
     end)
-    for _, o in ipairs(others) do add(o.zoneID, o.entry, o.shardID, nil) end
+    for _, o in ipairs(others) do
+        add(o.zoneID, o.entry, o.shardID, nil, o.known, o.from)
+    end
 
     -- A zone with something happening but no timer would otherwise have no row
     -- at all, which is the case whenever you fly somewhere new or return on a

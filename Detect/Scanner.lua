@@ -560,6 +560,27 @@ function Scanner.OnVignettesUpdated()
     local tNow, stamp = fitClock(), stampClock()
     dropStaleTracks(tNow)
 
+    -- A crate that stopped being drawn while you were standing in its zone,
+    -- without anybody being seen to take it.
+    --
+    -- Dmitrii watched one land in Slayer's Rise, flew over, and found nothing
+    -- there. Two very different things look identical from a distance:
+    -- somebody looted it, which is ordinary, and the zone re-shard under him,
+    -- which means the crate is still there in a copy he is no longer in. The
+    -- claimed vignette separates them, and its absence is the interesting
+    -- case. Only reported for the zone the player is actually in, because
+    -- flying out of range of a crate is not news.
+    local lost = liveCrate[zoneID]
+    if lost and lost.phase == "ground" and (stamp - (lost.seen or 0)) > LIVE_STALE then
+        liveCrate[zoneID] = nil
+        local moved = shardChangedAt[zoneID]
+            and (stamp - shardChangedAt[zoneID]) < LIVE_STALE * 2
+        ns.Print(("|cffff8800the crate in %s is no longer there|r |cff777777-- nobody was"
+            .. " seen to take it, and %s|r"):format(ns.GetZoneName(zoneID),
+            moved and "|cffff5555this zone re-sharded under you|r"
+                or "the shard has not changed"))
+    end
+
     local guids = C_VignetteInfo.GetVignettes()
     if type(guids) ~= "table" then return end
 
@@ -657,6 +678,13 @@ function Scanner.OnVignettesUpdated()
                     else
                         local key = fallKey(zoneID, shard)
                         if stage == "claimed" then
+                            -- Worth one line: it answers the question the
+                            -- silent version of this left open, which is
+                            -- whether the crate was taken or went missing.
+                            if liveCrate[zoneID] then
+                                ns.Print(("|cff777777the crate in %s has been taken|r"):format(
+                                    ns.GetZoneName(zoneID)))
+                            end
                             liveCrate[zoneID] = nil
                         else
                             local live = liveCrate[zoneID] or { zoneID = zoneID }
@@ -716,6 +744,17 @@ function Scanner.OnVignettesUpdated()
                                 end
                                 fallingSince[key] = stamp
                                 partialFall[key] = not sawItStart or nil
+
+                                -- The first leg, timed rather than computed.
+                                -- Only an announcement is really the spawn;
+                                -- catching the transport in the air says when
+                                -- it came into range, which is a lower bound
+                                -- by however long it had already been flying.
+                                local anchor = ns.Timers.Get(db.crates, zoneID, shard)
+                                if anchor and anchor.ts then
+                                    ns.Airtime.NoteFlight(db.flight, zoneID,
+                                        stamp - anchor.ts, anchor.source ~= "yell")
+                                end
                                 releaseLag[key] = sawItStart and arrivedAt[zoneID]
                                     and (stamp - arrivedAt[zoneID]) or nil
                                 fallAtlas[key] = info.atlasName

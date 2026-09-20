@@ -42,11 +42,6 @@ local SECTIONS = {
         id = "route", title = "Route",
         note = "The rotation, in the order you fly it.",
     },
-    {
-        id = "travel", title = "Travel",
-        note = "Seconds from the capital, for the zones where you have "
-            .. "overridden the shipped estimate.",
-    },
 }
 Manage.SECTIONS = SECTIONS
 
@@ -157,24 +152,51 @@ builders.interval = function(db)
     return rows
 end
 
+-- Shipped spots as well as learned ones. An empty list said nothing about
+-- whether that was good news -- it is: nothing has been learned because every
+-- crate so far landed where the catalogue said it would. Shown read-only, and
+-- they are also what the prediction is matched against, which is worth being
+-- able to look at.
 builders.spots = function(db)
     local rows = {}
-    for _, zoneID in ipairs(zonesIn(db.learned)) do
-        local list = db.learned[zoneID]
-        rows[#rows + 1] = {
-            head = true, zoneID = zoneID, label = ns.GetZoneName(zoneID),
-            value = ("%d not in the catalogue"):format(#list),
-        }
-        for i = 1, #list do
-            local s = list[i]
-            local seen = s.n or 1
+    local ids = {}
+    for zoneID in pairs(ns.ZONES) do ids[#ids + 1] = zoneID end
+    for zoneID in pairs(db.learned or {}) do
+        if not ns.ZONES[zoneID] then ids[#ids + 1] = zoneID end
+    end
+    table.sort(ids, function(a, b) return ns.GetZoneName(a) < ns.GetZoneName(b) end)
+
+    for _, zoneID in ipairs(ids) do
+        local shipped = ns.ShippedDropPoints(zoneID) or {}
+        local learned = (db.learned or {})[zoneID] or {}
+        if #shipped > 0 or #learned > 0 then
             rows[#rows + 1] = {
-                section = "spots", zoneID = zoneID, index = i, stamp = s.x,
-                label = ("   %d."):format(i),
-                value = ("%.1f, %.1f"):format(s.x * 100, s.y * 100),
-                note  = ("%d sighting%s"):format(seen, seen == 1 and "" or "s"),
-                dim   = seen < 2,
+                head = true, zoneID = zoneID, label = ns.GetZoneName(zoneID),
+                value = ("%d catalogued, %d learned"):format(#shipped, #learned),
             }
+            for i = 1, #shipped do
+                local spot = shipped[i]
+                rows[#rows + 1] = {
+                    section = "spots", zoneID = zoneID, fixed = true,
+                    label = ("   %d."):format(i),
+                    value = ("%.1f, %.1f"):format(spot.x * 100, spot.y * 100),
+                    note  = ("catalogued, %d record%s"):format(spot.n or 1,
+                        (spot.n or 1) == 1 and "" or "s"),
+                    dim   = (spot.n or 1) < 2,
+                }
+            end
+            for i = 1, #learned do
+                local spot = learned[i]
+                local seen = spot.n or 1
+                rows[#rows + 1] = {
+                    section = "spots", zoneID = zoneID, index = i, stamp = spot.x,
+                    label = ("   +%d."):format(i),
+                    value = ("%.1f, %.1f"):format(spot.x * 100, spot.y * 100),
+                    note  = ("learned here, %d sighting%s"):format(seen,
+                        seen == 1 and "" or "s"),
+                    dim   = seen < 2,
+                }
+            end
         end
     end
     return rows
@@ -187,24 +209,8 @@ builders.route = function(db)
         rows[#rows + 1] = {
             section = "route", zoneID = zoneID, index = i, stamp = zoneID,
             label = ("%d.  %s"):format(i, ns.GetZoneName(zoneID)),
-            value = ("%ds out"):format(ns.GetZoneTravel(zoneID)),
+            value = ("cycle %ds"):format(ns.GetZoneInterval(zoneID)),
             movable = true,
-        }
-    end
-    return rows
-end
-
-builders.travel = function(db)
-    local rows, store, ids = {}, db.travel or {}, {}
-    for zoneID in pairs(store) do ids[#ids + 1] = zoneID end
-    table.sort(ids, function(a, b) return ns.GetZoneName(a) < ns.GetZoneName(b) end)
-    for _, zoneID in ipairs(ids) do
-        local z = ns.GetZone(zoneID)
-        rows[#rows + 1] = {
-            section = "travel", zoneID = zoneID, stamp = store[zoneID],
-            label = ns.GetZoneName(zoneID),
-            value = ("%ds"):format(store[zoneID]),
-            note  = ("shipped estimate %ds"):format(z and z.travel or 90),
         }
     end
     return rows
@@ -259,14 +265,6 @@ removers.route = function(db, row)
     return true
 end
 
-removers.travel = function(db, row)
-    local store = db.travel
-    if not store or store[row.zoneID] == nil then return false, "gone" end
-    if store[row.zoneID] ~= row.stamp then return false, "changed" end
-    store[row.zoneID] = nil
-    return true
-end
-
 -- true, or false plus a reason. "changed" is the stamp guard refusing to
 -- delete something other than what the row was showing.
 function Manage.Remove(db, row)
@@ -281,7 +279,6 @@ local STORE_OF = {
     descent  = "descent",
     interval = "gaps",
     spots    = "learned",
-    travel   = "travel",
 }
 
 local function sizeOf(v)

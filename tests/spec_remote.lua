@@ -346,3 +346,40 @@ t.test("superseding something nobody reported is not an error", function()
     t.notOk(Remote.Supersede(Remote.New(), HA, 4821, "ground"))
     t.notOk(Remote.Supersede(nil, HA, 4821, "ground"))
 end)
+
+-- Standing somewhere is worth reporting on its own. Which copy of a zone the
+-- raid is in cannot be found out about a zone you are not in, and a stored
+-- timer is only worth flying to if its shard is the one you will land in.
+t.test("a player standing in a zone reports which copy of it they are in", function()
+    local store = Remote.New()
+    t.eq(Remote.Note(store, report({ stage = "here", shardID = 2514 }), T0), "new")
+    local shard, who, age = Remote.ShardFor(store, HA, T0 + 60)
+    t.eq(shard, 2514)
+    t.eq(who, "Scout")
+    t.eq(age, 60)
+end)
+
+t.test("standing somewhere is never drawn as a crate being there", function()
+    local store = Remote.New()
+    Remote.Note(store, report({ stage = "here" }), T0)
+    t.eq(Remote.For(store, HA, T0), nil)
+end)
+
+t.test("a crate sighting answers the shard question too", function()
+    local store = Remote.New()
+    Remote.Note(store, report({ stage = "flying", shardID = 77 }), T0)
+    t.eq(Remote.ShardFor(store, HA, T0), 77, "seeing a crate means being there")
+end)
+
+t.test("the freshest report wins when two people are in one zone", function()
+    local store = Remote.New()
+    Remote.Note(store, report({ stage = "here", shardID = 1, from = "Early" }), T0)
+    Remote.Note(store, report({ stage = "here", shardID = 2, from = "Late", at = T0 + 30 }), T0 + 30)
+    t.eq(Remote.ShardFor(store, HA, T0 + 30), 2)
+end)
+
+t.test("a report from a player who has long since moved on is not used", function()
+    local store = Remote.New()
+    Remote.Note(store, report({ stage = "here" }), T0)
+    t.eq(Remote.ShardFor(store, HA, T0 + 1000), nil)
+end)

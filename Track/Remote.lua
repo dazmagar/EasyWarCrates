@@ -27,7 +27,16 @@ ns.Remote = Remote
 -- this time", which is what HGLog shares, with nothing said about how well the
 -- sender knew it. It lives about one cycle, because past that it describes a
 -- drop that has already been and gone.
-local LIFETIME = { flying = 300, falling = 200, ground = 180, claimed = 90, anchor = 1200 }
+-- here is not a crate at all. It is a player saying which copy of a zone they
+-- are standing in, which is the one thing nobody can find out about a zone
+-- they are not in. A stored timer is only worth flying to if the shard it was
+-- learned on is the shard the raid will land in, and a scout already sitting
+-- there is the only source for that before you arrive.
+--
+-- Lives as long as somebody plausibly stays put. They re-shard when they leave
+-- and come back, so it is not worth more than that.
+local LIFETIME = { flying = 300, falling = 200, ground = 180, claimed = 90,
+                   anchor = 1200, here = 900 }
 Remote.LIFETIME = LIFETIME
 
 -- Matches Model.LiveFor, because both feed the same sorted list and two
@@ -329,4 +338,19 @@ function Remote.Supersede(store, zoneID, shardID, stage)
     shards[shardID] = nil
     if not next(shards) then store[zoneID] = nil end
     return true
+end
+
+-- Which copy of a zone the raid is in, as somebody standing there reports it.
+-- Returns the shard, who said so, and how long ago.
+function Remote.ShardFor(store, zoneID, now)
+    local shards = store and store[zoneID]
+    if not shards then return nil end
+    local best, bestShard
+    for shardID, entry in pairs(shards) do
+        if alive(entry, now) and (not best or entry.at > best.at) then
+            best, bestShard = entry, shardID
+        end
+    end
+    if not best then return nil end
+    return bestShard, best.from, now - best.at
 end

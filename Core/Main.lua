@@ -10,7 +10,6 @@ local DEFAULTS = {
     crates    = nil,    -- filled with ns.Timers.New()
     learned   = nil,    -- drop spots the shipped catalogue does not have
     gaps      = nil,    -- observed intervals between drops
-    travel    = nil,    -- per-zone capital-to-zone overrides
     route     = nil,    -- the rotation, as zone ids in order
     -- Everything this addon says, kept so it can be read back after the fact.
     -- /chatlog does not capture it: that logs the CHAT_MSG_* stream, and an
@@ -18,6 +17,7 @@ local DEFAULTS = {
     -- ever becoming a chat message. WarCratePredict keeps its own log for the
     -- same reason. Written to disk on /reload, like everything else here.
     log       = nil,
+    flight    = nil,    -- measured spawn-to-parachute times, per zone
     descent   = nil,    -- measured parachute times, per zone
     release   = nil,    -- how wrong the release-time estimate runs, per zone
     -- Tell the group what this client sees. Receiving needs no switch:
@@ -73,9 +73,9 @@ local function applyDefaults(db)
     db.crates  = db.crates or ns.Timers.New()
     db.learned = db.learned or {}
     db.gaps    = db.gaps or {}
-    db.travel  = db.travel or {}
     db.route   = db.route or {}
     db.descent = db.descent or {}
+    db.flight  = db.flight or {}
     db.release = db.release or {}
     db.log     = db.log or {}
     -- Deliberately not on db. db IS the saved table, so a store hung off

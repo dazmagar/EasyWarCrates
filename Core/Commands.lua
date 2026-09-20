@@ -486,47 +486,30 @@ HANDLERS.route = function(rest)
         return
     end
 
-    local plan = ns.Route.Plan(ns.db.crates, ns.db.route, ns.GetZoneInterval,
-        ns.GetZoneTravel, GetServerTime())
+    local now = GetServerTime()
+    local plan = ns.Route.Plan(ns.db.crates, ns.db.route, ns.GetZoneInterval, now)
     local next_ = ns.Route.Next(plan)
     ns.Print("route: " .. ns.Route.Describe(ns.db.route))
+    ns.Print("|cff777777         plane     lootable|r")
     for _, row in ipairs(plan) do
         local mark = (row == next_) and "|cff33ff99>|r" or " "
         if row.status == "unknown" then
-            ns.Print(("%s %-3s |cff777777nothing timed here yet|r"):format(mark, ns.GetZoneAbbr(row.zoneID)))
+            ns.Print(("%s %-3s |cff777777nothing timed here yet|r"):format(
+                mark, ns.GetZoneAbbr(row.zoneID)))
         else
-            local colour = row.status == "missed" and "|cffff5555"
-                or (row.status == "go" and "|cff33ff99" or "|cffffd100")
-            ns.Print(("%s %-3s shard %-7s drop %s   %sleave %s|r%s"):format(
-                mark, ns.GetZoneAbbr(row.zoneID), tostring(row.shardID),
-                ns.FormatClock(row.dropIn), colour,
-                row.leaveIn >= 0 and ns.FormatClock(row.leaveIn) or "  NOW",
-                (row.missed or 0) > 0 and ("  |cff777777x%d missed|r"):format(row.missed) or ""))
+            local flight = ns.Airtime.Flight(ns.db.flight, row.zoneID)
+            local descent = ns.Airtime.Descent(ns.db.descent, row.zoneID)
+            ns.Print(("%s %-3s %s   |cffffd100%s|r  |cff777777shard %s%s|r"):format(
+                mark, ns.GetZoneAbbr(row.zoneID),
+                ns.FormatClock(row.dropIn),
+                ns.FormatClock(row.dropIn + flight + descent),
+                tostring(row.shardID),
+                (row.missed or 0) > 0 and ("  x%d missed"):format(row.missed) or ""))
         end
     end
     if not next_ then
-        ns.Print("|cffff5555nothing on this route is reachable right now|r")
+        ns.Print("|cffff5555nothing on this route has a timer yet|r")
     end
-end
-
--- Capital-to-zone flight times, which the planner needs and nobody has
--- measured. "/ewc travel" lists them, "/ewc travel ZA 70" sets one.
-HANDLERS.travel = function(rest)
-    local word, secs = tostring(rest or ""):match("^(%a+)%s+(%d+)")
-    if word then
-        local zoneID = ns.ResolveZoneInput(word)
-        if not zoneID then return ns.Print("do not know the zone " .. word) end
-        ns.db.travel[zoneID] = tonumber(secs)
-        ns.Print(("%s: %ds from the capital"):format(ns.GetZoneName(zoneID), tonumber(secs)))
-        return
-    end
-    ns.Print("capital to zone, in seconds:")
-    for zoneID in pairs(ns.ZONES) do
-        ns.Print(("  %-3s %-16s %3ds%s"):format(
-            ns.GetZoneAbbr(zoneID), ns.GetZoneName(zoneID), ns.GetZoneTravel(zoneID),
-            ns.db.travel[zoneID] and "  |cff33ff99yours|r" or "  |cff777777estimate|r"))
-    end
-    ns.Print("|cff777777set one with /ewc travel ZA 70|r")
 end
 
 -- Are the zones' cycles offset from each other by a fixed amount?
@@ -658,8 +641,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc announce -- post where you stand to the group, as a pin they can click")
     ns.Print("  /ewc predict  -- live heading fit and where it points")
     ns.Print("  /ewc points   -- catalogued drop spots for this zone")
-    ns.Print("  /ewc route    -- the rotation: what to fly to and when to leave")
-    ns.Print("  /ewc travel   -- capital-to-zone flight times used by the route")
+    ns.Print("  /ewc route    -- the rotation, when each transport comes and when it lands")
     ns.Print("  /ewc timers   -- tracked crate timers")
     ns.Print("  /ewc interval -- measured gaps; 'drop ZONE N', 'reset [ZONE]'")
     ns.Print("  /ewc offsets  -- whether the zones' cycles sit at a fixed offset")

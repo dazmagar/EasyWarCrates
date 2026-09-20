@@ -10,7 +10,6 @@ local function freshDB()
         descent = {},
         gaps    = {},
         learned = {},
-        travel  = {},
         route   = {},
     }
 end
@@ -23,12 +22,35 @@ local function removable(rows)
     return out
 end
 
-t.test("an empty database lists nothing anywhere", function()
+-- The drop points section shows the shipped catalogue even when nothing has
+-- been learned. A blank list said nothing about whether blank was good news,
+-- and it is: nothing learned means every crate landed where the catalogue said
+-- it would.
+local RECORDED = { timers = true, descent = true, interval = true, route = true }
+
+t.test("an empty database records nothing in the sections that hold records", function()
     local db = freshDB()
     for _, section in ipairs(Manage.SECTIONS) do
-        t.eq(#Manage.Rows(db, section.id, T0), 0, section.id .. " should be empty")
-        t.eq(Manage.Count(db, section.id, T0), 0, section.id .. " count")
+        if RECORDED[section.id] then
+            t.eq(#Manage.Rows(db, section.id, T0), 0, section.id .. " should be empty")
+            t.eq(Manage.Count(db, section.id, T0), 0, section.id .. " count")
+        end
     end
+end)
+
+t.test("the shipped catalogue is shown even with nothing learned", function()
+    local db = freshDB()
+    t.lt(0, #Manage.Rows(db, "spots", T0), "the catalogue is worth looking at")
+end)
+
+t.test("nothing shipped can be removed", function()
+    local db = freshDB()
+    local shipped
+    for _, row in ipairs(Manage.Rows(db, "spots", T0)) do
+        if not row.head then shipped = row break end
+    end
+    t.ok(shipped.fixed, "a catalogued spot is not the player's to delete")
+    t.eq(shipped.index, nil)
 end)
 
 t.test("an unknown section is empty rather than an error", function()
@@ -172,21 +194,31 @@ end)
 -- and stores nothing: the shipped catalogue is never edited.
 local NEW_SPOT_X, NEW_SPOT_Y = 0.80, 0.15
 
+-- A learned spot sits after the catalogued ones for its zone, so it is found
+-- by being removable rather than by position.
+local function learnedRows(db)
+    local out = {}
+    for _, row in ipairs(Manage.Rows(db, "spots", T0)) do
+        if row.index then out[#out + 1] = row end
+    end
+    return out
+end
+
 t.test("learned drop points are listed in percent and counted", function()
     local db = freshDB()
     Learn.Note(db.learned, ZA, NEW_SPOT_X, NEW_SPOT_Y)
     Learn.Note(db.learned, ZA, NEW_SPOT_X, NEW_SPOT_Y)
-    local rows = Manage.Rows(db, "spots", T0)
-    t.ok(rows[1].head)
-    t.eq(rows[2].value, "80.0, 15.0")
-    t.ok(rows[2].note:find("2 sighting", 1, true), rows[2].note)
-    t.notOk(rows[2].dim, "two sightings is no longer a single guess")
+    local rows = learnedRows(db)
+    t.eq(#rows, 1)
+    t.eq(rows[1].value, "80.0, 15.0")
+    t.ok(rows[1].note:find("2 sighting", 1, true), rows[1].note)
+    t.notOk(rows[1].dim, "two sightings is no longer a single guess")
 end)
 
 t.test("a drop point reinforced under the panel is not removed", function()
     local db = freshDB()
     Learn.Note(db.learned, ZA, NEW_SPOT_X, NEW_SPOT_Y)
-    local row = removable(Manage.Rows(db, "spots", T0))[1]
+    local row = learnedRows(db)[1]
     Learn.Note(db.learned, ZA, NEW_SPOT_X + 0.005, NEW_SPOT_Y + 0.002)
     local ok, why = Manage.Remove(db, row)
     t.notOk(ok)
@@ -225,17 +257,6 @@ t.test("a zone joins the route once and only once", function()
     t.eq(why, "already")
     t.eq(#db.route, 1)
     t.notOk(Manage.AddToRoute(db, 99999), "a zone the addon does not track")
-end)
-
-t.test("only overridden travel times are listed, and removing one reverts it", function()
-    local db = freshDB()
-    t.eq(#Manage.Rows(db, "travel", T0), 0, "shipped estimates are not overrides")
-    db.travel[HA] = 120
-    local row = Manage.Rows(db, "travel", T0)[1]
-    t.eq(row.value, "120s")
-    t.ok(row.note:find("75", 1, true), row.note)
-    t.ok(Manage.Remove(db, row))
-    t.eq(db.travel[HA], nil)
 end)
 
 t.test("clearing one zone leaves the others alone", function()

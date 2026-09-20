@@ -28,7 +28,7 @@ t.test("with no route, every timer is shown soonest first", function()
     t.eq(rows[2].zoneID, HA)
     t.eq(rows[3].zoneID, ZA)
     t.notOk(rows[1].inRoute)
-    t.eq(rows[1].leaveIn, nil, "leave-in only means something for a rotation")
+    t.ok(rows[1].onGround, "every timed row says when the crate will be lootable")
 end)
 
 t.test("a route is planned and comes first", function()
@@ -37,7 +37,8 @@ t.test("a route is planned and comes first", function()
         { VS, 2, T0 - 100 }), { VS }, T0)
     t.eq(rows[1].zoneID, VS, "the route zone leads even though its drop is later")
     t.ok(rows[1].inRoute)
-    t.ok(rows[1].leaveIn, "a route row answers when to set off")
+    t.ok(rows[1].onGround, "and says when the crate will be lootable")
+    t.lt(rows[1].remaining, rows[1].onGround, "the transport comes first, the crate after")
     t.ok(rows[1].status)
     t.eq(rows[2].zoneID, ZA, "and what is off-route is still shown")
     t.notOk(rows[2].inRoute)
@@ -52,16 +53,20 @@ t.test("a route zone with no timer keeps its place", function()
     t.eq(by[SR].fraction, 0)
 end)
 
-t.test("the row worth acting on is identified", function()
+-- It used to be "the soonest one you could still reach", worked out from a
+-- table of capital-to-zone flight times. Those were coarse by their own
+-- admission and the advice they produced was guesswork wearing a number, so
+-- the row worth acting on is simply the next one due.
+t.test("the row worth acting on is the next one due", function()
     local _, nextRow = Model.BuildRows(db(
-        { VS, 1, T0 - 1070 },   -- drops in 30s, too soon to reach
+        { VS, 1, T0 - 1070 },
         { ZA, 2, T0 - 700 }), { VS, ZA }, T0)
     t.ok(nextRow)
-    t.eq(nextRow.zoneID, ZA, "not the one that drops soonest, the one you can reach")
+    t.eq(nextRow.zoneID, VS, "thirty seconds out and still the next thing to happen")
 end)
 
-t.test("nothing reachable means nothing is singled out", function()
-    local _, nextRow = Model.BuildRows(db({ VS, 1, T0 - 1090 }), { VS }, T0)
+t.test("a route with nothing timed singles out nothing", function()
+    local _, nextRow = Model.BuildRows(Timers.New(), { VS }, T0)
     t.eq(nextRow, nil)
 end)
 
@@ -240,33 +245,81 @@ t.test("no transport at all is still no headline", function()
     t.eq(head, nil, "this is the one case the window should say nothing for")
 end)
 
--- A timer belongs to a shard. Landing on a different copy of the zone is why
--- a raid flies out, waits, and nothing comes: the crate is there, its cycle is
--- in another phase. The row has to say so.
+-- A timer belongs to one copy of a zone. Once the copy is known, the only
+-- entry worth reading is that copy's, and its absence is an answer rather than
+-- a gap: nothing has been timed here yet. Another copy's countdown in that
+-- place is worse than blank, because it looks exactly like knowledge, and a
+-- raid flies out on the strength of it and finds nothing.
 local function standingOn(shard)
     ns.Scanner = { CurrentShard = function() return shard end }
 end
 
-t.test("a timer learned on another shard is marked as such", function()
+local function scoutSays(zoneID, shard, who)
+    ns.remote = ns.Remote.New()
+    ns.Remote.Note(ns.remote, { zoneID = zoneID, shardID = shard, stage = "here",
+                                at = T0, from = who or "Scout" }, T0)
+end
+
+local function clear()
+    ns.Scanner, ns.remote = nil, nil
+end
+
+t.test("the timer shown is the one for the copy of the zone you are in", function()
+    local d = db({ ZA, 7, T0 - 100 }, { ZA, 999, T0 - 700 })
     standingOn(999)
+    local rows = Model.BuildRows(d, nil, T0)
+    clear()
+    t.eq(rows[1].shardID, 999, "not the freshest, the one that applies")
+    t.ok(rows[1].remaining)
+end)
+
+t.test("a copy nobody has timed shows nothing rather than somebody else's", function()
+    standingOn(12345)
     local rows = Model.BuildRows(db({ ZA, 7, T0 - 100 }), nil, T0)
-    ns.Scanner = nil
+    clear()
+    t.eq(#rows, 1)
+    t.eq(rows[1].shardID, 12345)
+    t.eq(rows[1].remaining, nil, "blank, because this copy has never been watched")
+    t.ok(rows[1].newShard)
+end)
+
+t.test("not knowing the copy falls back to the freshest, and says it is a guess", function()
+    clear()
+    local rows = Model.BuildRows(db({ ZA, 7, T0 - 100 }), nil, T0)
     t.eq(rows[1].shardID, 7)
-    t.eq(rows[1].hereShard, 999)
-    t.ok(rows[1].wrongShard, "7 is not 999")
+    t.ok(rows[1].remaining)
+    t.ok(rows[1].guessedShard)
+    t.notOk(rows[1].newShard)
 end)
 
-t.test("standing on the shard the timer came from is not a mismatch", function()
+-- For a zone nobody here is standing in, a scout parked in it is the only way
+-- to know which copy the raid will land in before flying there rather than
+-- after.
+t.test("a scout's shard decides for a zone this client is not in", function()
+    scoutSays(ZA, 999)
+    local rows = Model.BuildRows(db({ ZA, 7, T0 - 100 }), nil, T0)
+    clear()
+    t.eq(rows[1].shardID, 999)
+    t.eq(rows[1].shardFrom, "Scout")
+    t.ok(rows[1].newShard, "the raid is in 999 and 999 has never been timed")
+end)
+
+t.test("this client's own reading beats a scout's", function()
     standingOn(7)
+    scoutSays(ZA, 999)
     local rows = Model.BuildRows(db({ ZA, 7, T0 - 100 }), nil, T0)
-    ns.Scanner = nil
-    t.notOk(rows[1].wrongShard)
+    clear()
+    t.eq(rows[1].shardID, 7)
+    t.eq(rows[1].shardFrom, "you")
+    t.ok(rows[1].remaining)
 end)
 
-t.test("not knowing which shard you are in is not a mismatch either", function()
-    standingOn(nil)
-    local rows = Model.BuildRows(db({ ZA, 7, T0 - 100 }), nil, T0)
-    ns.Scanner = nil
-    t.notOk(rows[1].wrongShard, "silence is not evidence of being in the wrong place")
-    t.eq(rows[1].hereShard, nil)
+t.test("a route zone keeps its row even when its copy has nothing timed", function()
+    standingOn(999)
+    local rows = Model.BuildRows(db({ ZA, 7, T0 - 100 }), { ZA }, T0)
+    clear()
+    t.eq(#rows, 1, "the route keeps its shape")
+    t.ok(rows[1].inRoute)
+    t.ok(rows[1].newShard)
+    t.eq(rows[1].remaining, nil)
 end)

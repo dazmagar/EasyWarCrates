@@ -60,6 +60,13 @@ local function removeRow(row)
     if ns.RefreshWindow then ns.RefreshWindow() end
 end
 
+local function nudge(row, delta)
+    if not row then return end
+    ns.Manage.Move(ns.db, row, delta)
+    refresh()
+    if ns.RefreshWindow then ns.RefreshWindow() end
+end
+
 local function makeRow(index)
     local r = CreateFrame("Frame", nil, panel.scrollChild)
     r:SetSize(WIDTH - NAV_W - 56, ROW_H)
@@ -93,21 +100,13 @@ local function makeRow(index)
     r.down:SetSize(20, 18)
     r.down:SetPoint("RIGHT", r.remove, "LEFT", -2, 0)
     r.down:SetText("v")
-    r.down:SetScript("OnClick", function(self)
-        ns.Manage.Move(ns.db, self:GetParent().data, 1)
-        refresh()
-        if ns.RefreshWindow then ns.RefreshWindow() end
-    end)
+    r.down:SetScript("OnClick", function(self) nudge(self:GetParent().data, 1) end)
 
     r.up = CreateFrame("Button", nil, r, "UIPanelButtonTemplate")
     r.up:SetSize(20, 18)
     r.up:SetPoint("RIGHT", r.down, "LEFT", -2, 0)
     r.up:SetText("^")
-    r.up:SetScript("OnClick", function(self)
-        ns.Manage.Move(ns.db, self:GetParent().data, -1)
-        refresh()
-        if ns.RefreshWindow then ns.RefreshWindow() end
-    end)
+    r.up:SetScript("OnClick", function(self) nudge(self:GetParent().data, -1) end)
 
     -- Only on a zone heading, where it clears that zone rather than one row.
     r.clearZone = CreateFrame("Button", nil, r, "UIPanelButtonTemplate")
@@ -140,7 +139,9 @@ local function paintRow(r, row)
         r.label:SetFontObject(row.dim and "GameFontDisableSmall" or "GameFontHighlightSmall")
         r.value:SetFontObject(row.dim and "GameFontDisableSmall" or "GameFontNormalSmall")
         r.clearZone:Hide()
-        r.remove:Show()
+        -- A catalogued drop point and a shipped travel time are not the
+        -- player's records and there is nothing of theirs to take away.
+        r.remove:SetShown(not row.fixed)
         if row.movable then r.up:Show(); r.down:Show() else r.up:Hide(); r.down:Hide() end
     end
     r:Show()

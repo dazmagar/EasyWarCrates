@@ -54,15 +54,19 @@ local function makeRow(parent, index)
         if not d then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine(ns.GetZoneName(d.zoneID))
-        if d.wrongShard then
-            GameTooltip:AddLine(("shard %s -- you are in %s"):format(
-                tostring(d.shardID), tostring(d.hereShard)), 1, 0.4, 0.4)
-            GameTooltip:AddLine("This countdown belongs to a different copy of the zone. "
-                .. "The crate is still there, its cycle is simply in another phase, which is "
-                .. "why a raid can fly out, wait, and see no transport at all.",
-                1, 0.5, 0.3, true)
-        else
-            GameTooltip:AddLine(("shard %s"):format(tostring(d.shardID or "?")), 0.7, 0.7, 0.7)
+        local said = d.shardFrom == "you" and "you are in it"
+            or d.shardFrom and ("%s is in it"):format(tostring(d.shardFrom)) or nil
+        GameTooltip:AddLine(("shard %s%s"):format(tostring(d.shardID or "?"),
+            said and (" -- " .. said) or ""), 0.7, 0.7, 0.7)
+        if d.newShard then
+            GameTooltip:AddLine("Nothing has been timed in this copy of the zone yet. "
+                .. "A timer belongs to one copy, and entering a zone hands you one you did "
+                .. "not choose, so another copy's countdown here would look like knowledge "
+                .. "and send a raid out on the strength of it.", 1, 0.5, 0.3, true)
+        elseif d.guessedShard then
+            GameTooltip:AddLine("Which copy of the zone you are in is not known, so this "
+                .. "countdown may belong to another one. Anyone in the raid standing there "
+                .. "settles it.", 1, 0.5, 0.3, true)
         end
         if d.live then
             GameTooltip:AddLine(
@@ -71,15 +75,14 @@ local function makeRow(parent, index)
                 or "a transport is in the air here", 0.2, 1, 0.2)
         end
         if d.remaining then
-            GameTooltip:AddLine(("next crate drops in %s"):format(
+            GameTooltip:AddLine(("transport appears in %s"):format(
                 ns.FormatClock(d.remaining):gsub("^%s+", "")), 1, 1, 1)
         else
             GameTooltip:AddLine("never seen a crate here", 0.7, 0.7, 0.7)
         end
-        if d.leaveIn then
-            GameTooltip:AddLine(("%s -- %ds from the capital to this zone"):format(
-                d.leaveIn <= 0 and "leave now" or ("leave in " .. ns.FormatClock(d.leaveIn):gsub("^%s+", "")),
-                ns.GetZoneTravel(d.zoneID)), 1, 0.82, 0)
+        if d.onGround then
+            GameTooltip:AddLine(("lootable in %s"):format(
+                ns.FormatClock(d.onGround):gsub("^%s+", "")), 1, 0.82, 0)
         end
         if not d.precise and d.remaining then
             GameTooltip:AddLine("~ the timer was seeded from a crate already on the ground, "
@@ -130,26 +133,27 @@ local function paintRow(r, row, isNext)
         end
         r.bar:SetStatusBarColor(cr, cg, cb, 1)
     elseif not row.remaining then
-        r.right:SetText("|cff777777-- : --|r")
+        -- Blank has two meanings and they are not the same news. Never seen is
+        -- a gap; a fresh shard is a fact about right now.
+        r.right:SetText(row.newShard and "|cffff8800new shard|r" or "|cff777777-- : --|r")
     else
         -- A tilde says the timer was seeded from a crate found already on the
         -- ground, so the cycle is right but the phase is only as good as the
         -- moment it happened to be spotted.
-        -- A countdown for another copy of the zone is not merely imprecise, it
-        -- is about somewhere else, so it is marked apart from the ~ that means
-        -- "seeded from a crate found on the ground".
-        local mark = row.wrongShard and "|cffff5555?|r" or (row.precise and "" or "~")
-        local clock = mark .. ns.FormatClock(row.remaining):gsub("^%s+", "")
-        local leave = ""
-        if row.leaveIn then
-            leave = row.status == "missed" and " |cffff5555miss|r"
-                or (row.leaveIn <= 0 and " |cff33ff99GO|r"
-                or (" |cffffd100%s|r"):format(ns.FormatClock(row.leaveIn):gsub("^%s+", "")))
-        end
-        -- The missed-cycle count lives in the tooltip now. On the row it was
-        -- an unexplained "x2" next to two unexplained countdowns, and the
-        -- dimming already says "do not trust this one" without jargon.
-        r.right:SetText(("%s%s"):format(clock, leave))
+        -- A ? says which copy of the zone this countdown belongs to is not
+        -- known, which is a different doubt from the ~ above.
+        local mark = row.guessedShard and "|cffff8800?|r" or (row.precise and "" or "~")
+        local plane = mark .. ns.FormatClock(row.remaining):gsub("^%s+", "")
+        -- Two moments in one crate's life, which is what a farmer is actually
+        -- deciding between: when to be in the zone, and when it is worth
+        -- landing on. Telling anybody when to set off was guesswork dressed as
+        -- advice, and it needed a table of travel times to produce.
+        local ground = row.onGround
+            and ("  |cffffd100%s|r"):format(ns.FormatClock(row.onGround):gsub("^%s+", ""))
+            or ""
+        -- The missed-cycle count lives in the tooltip. On the row it was an
+        -- unexplained "x2" next to two unexplained countdowns.
+        r.right:SetText(plane .. ground)
     end
     r:Show()
 end
@@ -188,8 +192,7 @@ local function refresh()
         frame.empty:Hide()
     end
 
-    -- No route means no leave column, so the header should not claim one.
-    frame.headRight:SetText((ns.db.route and #ns.db.route > 0) and "drop    leave" or "drop")
+    frame.headRight:SetText("plane    drop")
 
     -- The headline only takes room when it has something in it.
     local headRoom = head and 16 or 0

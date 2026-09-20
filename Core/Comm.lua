@@ -222,6 +222,38 @@ function Comm.Announce(zoneID, x, y)
     return "sent"
 end
 
+-- Say which copy of the zone this client is standing in.
+--
+-- The one thing nobody can find out about a zone they are not in, and the
+-- thing that decides whether a stored timer is worth flying to. A scout parked
+-- in Zul'Aman knows its shard now; everyone else finds out on arrival, which
+-- is too late to have chosen.
+--
+-- Sent on arriving somewhere and then rarely, because it only changes when
+-- somebody moves.
+local HERE_COOLDOWN = 240
+local lastHere = {}
+
+function Comm.ReportHere()
+    if not ns.db or not ns.db.enabled or not ns.db.share then return "off" end
+    if not IsInGroup() then return "alone" end
+
+    local zoneID = ns.Zones.Normalize(C_Map.GetBestMapForUnit("player"))
+    if not zoneID then return "not-tracked" end
+    local shard = ns.Scanner and ns.Scanner.CurrentShard and ns.Scanner.CurrentShard(zoneID)
+    if not shard then return "no-shard" end
+
+    local key = ("%s:%s"):format(zoneID, shard)
+    local now = GetTime()
+    if (now - (lastHere[key] or -math.huge)) < HERE_COOLDOWN then return "too-soon" end
+    lastHere[key] = now
+
+    pcall(C_ChatInfo.SendAddonMessage, OURS, ns.Remote.Encode({
+        stage = "here", zoneID = zoneID, shardID = shard, at = GetServerTime(),
+    }), IsInRaid() and "RAID" or "PARTY")
+    return "sent"
+end
+
 function Comm.Role()
     if not IsInGroup() then return "solo" end
     if UnitIsGroupLeader("player") then return "leader" end
@@ -233,6 +265,8 @@ local frame = CreateFrame("Frame")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("CHAT_MSG_ADDON")
 frame:RegisterEvent("GROUP_ROSTER_UPDATE")
+frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 for _, event in ipairs({ "CHAT_MSG_RAID_WARNING", "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER",
                          "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER" }) do
     frame:RegisterEvent(event)
@@ -245,6 +279,10 @@ frame:SetScript("OnEvent", function(_, event, ...)
     elseif event == "CHAT_MSG_ADDON" then
         local prefix, text, channel, sender = ...
         Comm.OnAddonMessage(prefix, text, channel, sender)
+    elseif event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then
+        -- Not immediately: the shard is read from whatever the game draws
+        -- first, and on arrival it has drawn nothing yet.
+        C_Timer.After(8, Comm.ReportHere)
     elseif event == "GROUP_ROSTER_UPDATE" then
         -- Out of the group, out of the reports. They were never yours and the
         -- shards they name are not ones you will be on again.
@@ -254,5 +292,10 @@ frame:SetScript("OnEvent", function(_, event, ...)
         Comm.OnChat(text, sender, event:gsub("^CHAT_MSG_", ""))
     end
 end)
+
+-- Rarely, and only to say a thing that rarely changes. Someone who never
+-- crosses a zone border still confirms they are there, which is what stops a
+-- report ageing out under a scout who has not moved.
+C_Timer.NewTicker(HERE_COOLDOWN, function() Comm.ReportHere() end)
 
 Comm.frame = frame
