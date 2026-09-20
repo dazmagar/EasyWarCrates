@@ -64,7 +64,7 @@ end)
 t.test("a reading taken with the parachute still drawn is flagged", function()
     local store = {}
     Airtime.NoteDescent(store, ZONE, 87)
-    Airtime.NoteDescent(store, ZONE, 98, true)
+    Airtime.NoteDescent(store, ZONE, 98, { overlapped = true })
     local mean, n, lo, hi, over = Airtime.Descent(store, ZONE)
     t.eq(n, 2)
     t.eq(over, 1, "one of the two is suspect and the readout has to be able to say so")
@@ -76,7 +76,7 @@ end)
 t.test("individual readings are kept, not just their summary", function()
     local store = {}
     Airtime.NoteDescent(store, ZONE, 87)
-    Airtime.NoteDescent(store, ZONE, 98, true)
+    Airtime.NoteDescent(store, ZONE, 98, { overlapped = true })
     local samples = Airtime.DescentSamples(store, ZONE)
     t.eq(#samples, 2)
     t.eq(samples[1].secs, 87)
@@ -192,8 +192,8 @@ end)
 -- spot it came from, that could be argued and not settled.
 t.test("a descent records where it was measured", function()
     local store = {}
-    Airtime.NoteDescent(store, ZONE, 129, nil, { x = 0.469, y = 0.622 })
-    Airtime.NoteDescent(store, ZONE, 83, nil, { x = 0.398, y = 0.275 })
+    Airtime.NoteDescent(store, ZONE, 129, { pos = { x = 0.469, y = 0.622 } })
+    Airtime.NoteDescent(store, ZONE, 83, { pos = { x = 0.398, y = 0.275 } })
     local s = Airtime.DescentSamples(store, ZONE)
     t.near(s[1].x, 46.9, 1e-9)
     t.near(s[1].y, 62.2, 1e-9)
@@ -217,7 +217,7 @@ end)
 t.test("a descent joined mid-fall is kept out of the mean", function()
     local store = {}
     Airtime.NoteDescent(store, ZONE, 86)
-    Airtime.NoteDescent(store, ZONE, 115, nil, nil, true)
+    Airtime.NoteDescent(store, ZONE, 115, { partial = true })
     local mean, n, lo, hi, _, partial = Airtime.Descent(store, ZONE)
     t.eq(n, 1, "only the complete reading counts")
     t.near(mean, 86, 1e-9)
@@ -227,7 +227,7 @@ end)
 
 t.test("a partial reading is still stored and visible", function()
     local store = {}
-    Airtime.NoteDescent(store, ZONE, 115, nil, nil, true)
+    Airtime.NoteDescent(store, ZONE, 115, { partial = true })
     local samples = Airtime.DescentSamples(store, ZONE)
     t.eq(#samples, 1)
     t.ok(samples[1].partial)
@@ -235,7 +235,7 @@ end)
 
 t.test("with nothing but partial readings the guess still stands", function()
     local store = {}
-    Airtime.NoteDescent(store, ZONE, 115, nil, nil, true)
+    Airtime.NoteDescent(store, ZONE, 115, { partial = true })
     local mean, n = Airtime.Descent(store, ZONE)
     t.eq(mean, Airtime.DESCENT_GUESS, "a lower bound is not a measurement")
     t.eq(n, 0)
@@ -247,7 +247,7 @@ end)
 -- the same spot, so the fall alone does not explain the spread.
 t.test("the circling leg is stored alongside the fall", function()
     local store = {}
-    Airtime.NoteDescent(store, ZONE, 86, nil, nil, nil, 41.4)
+    Airtime.NoteDescent(store, ZONE, 86, { lag = 41.4 })
     local s = Airtime.DescentSamples(store, ZONE)[1]
     t.eq(s.secs, 86)
     t.eq(s.lag, 41, "rounded, and kept apart from the fall it is not part of")
@@ -264,7 +264,10 @@ t.test("the figure is the middle reading, not one the data never produced", func
         Airtime.NoteDescent(store, ZONE, secs)
     end
     local typical, n, lo, hi = Airtime.Descent(store, ZONE)
-    t.eq(n, 7)
+    -- n counts what the figure rests on, not how many readings exist. Five of
+    -- these seven agree; the 19 and the 61 are not evidence for 86 and are not
+    -- counted as though they were.
+    t.eq(n, 5)
     t.eq(typical, 86, "the mean of these is 73, which describes no drop here")
     t.eq(lo, 19, "the spread is still shown honestly")
     t.eq(hi, 87)
@@ -272,12 +275,114 @@ end)
 
 t.test("an even count takes the middle pair", function()
     local store = {}
-    for _, secs in ipairs({ 80, 90, 100, 200 }) do Airtime.NoteDescent(store, ZONE, secs) end
-    t.eq(Airtime.Descent(store, ZONE), 95)
+    for _, secs in ipairs({ 84, 86, 87, 89 }) do Airtime.NoteDescent(store, ZONE, secs) end
+    t.eq(Airtime.Descent(store, ZONE), 86.5)
 end)
 
 t.test("readings out of order still find the middle", function()
     local store = {}
     for _, secs in ipairs({ 129, 44, 87, 83, 85 }) do Airtime.NoteDescent(store, ZONE, secs) end
     t.eq(Airtime.Descent(store, ZONE), 85, "Zul'Aman, as it stands")
+end)
+
+-- The tail became a table when distance joined it. These pin the shape so a
+-- positional call cannot creep back in and silently land in the wrong field.
+t.test("the diagnostics arrive as a table and are stored under their own names", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 86, {
+        overlapped = true, partial = true, lag = 41.4, flip = 33.6,
+        pos = { x = 0.489, y = 0.692 }, dist = 12.34,
+    })
+    local rec = store[ZONE][1]
+    t.eq(rec.secs, 86)
+    t.ok(rec.overlapped)
+    t.ok(rec.partial)
+    t.eq(rec.lag, 41)
+    t.eq(rec.flip, 34)
+    t.eq(rec.x, 48.9)
+    t.eq(rec.y, 69.2)
+    t.eq(rec.dist, 12.3)
+end)
+
+t.test("a reading with no diagnostics at all is still taken", function()
+    local store = {}
+    t.ok(Airtime.NoteDescent(store, ZONE, 86))
+    t.ok(Airtime.NoteDescent(store, ZONE, 87, nil))
+    t.eq(#store[ZONE], 2)
+    t.eq(store[ZONE][1].dist, nil)
+end)
+
+-- Why distance is recorded at all: Eversong reads 14, 43 and 84 where four
+-- other zones cluster on 86, and a parachute only drawn once it falls into
+-- vignette range would truncate exactly the distant readings.
+t.test("distance does not change what the reading counts as", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 86, { dist = 40 })
+    Airtime.NoteDescent(store, ZONE, 86, { dist = 1 })
+    local typical, n = Airtime.Descent(store, ZONE)
+    t.eq(n, 2, "a far reading is recorded, not rejected")
+    t.eq(typical, 86)
+end)
+
+-- Dmitrii's saved readings on 20 Sep, which is what this estimator was changed
+-- for. Every zone holds a cluster near 86 and some contradictions around it;
+-- two zones hold nothing but contradictions.
+
+t.test("a zone that agrees with itself answers from its own readings", function()
+    local store = {}
+    for _, secs in ipairs({ 86, 86, 87, 61, 19, 86, 86 }) do
+        Airtime.NoteDescent(store, ZONE, secs)
+    end
+    local typical, n, _, _, _, _, source = Airtime.Descent(store, ZONE)
+    t.eq(source, "zone")
+    t.eq(typical, 86)
+    t.eq(n, 5)
+end)
+
+-- Eversong: 14, 43, 84, 92. Its own median is 64, a number no drop has ever
+-- taken, and it was being used for the countdown.
+t.test("a zone whose readings contradict each other borrows from the rest", function()
+    local store = {}
+    for _, secs in ipairs({ 14, 43, 84, 92 }) do Airtime.NoteDescent(store, "ES", secs) end
+    for _, secs in ipairs({ 86, 86, 87, 86, 86 }) do Airtime.NoteDescent(store, "HA", secs) end
+
+    local typical, n, lo, hi, _, _, source = Airtime.Descent(store, "ES")
+    t.eq(source, "pooled")
+    t.eq(typical, 86, "what every zone together says, not this zone's own contradiction")
+    -- Seven, not five: Eversong's own 84 and 92 belong to the agreement. Only
+    -- its 14 and 43 spoiled its median, and pooling does not discard the rest
+    -- of what it measured.
+    t.eq(n, 7)
+    t.eq(lo, 14, "and its own spread is still reported honestly")
+    t.eq(hi, 92)
+end)
+
+t.test("with nothing anywhere that agrees, it says so rather than inventing", function()
+    local store = {}
+    for _, secs in ipairs({ 14, 43, 84, 130 }) do Airtime.NoteDescent(store, "ES", secs) end
+    local typical, n, _, _, _, _, source = Airtime.Descent(store, "ES")
+    t.eq(source, "guess")
+    t.eq(typical, Airtime.DESCENT_GUESS)
+    t.eq(n, 0, "nothing here is evidence for anything")
+end)
+
+t.test("one or two readings are kept, because two cannot disagree", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 84)
+    local typical, n, _, _, _, _, source = Airtime.Descent(store, ZONE)
+    t.eq(typical, 84)
+    t.eq(n, 1)
+    t.eq(source, "zone")
+
+    Airtime.NoteDescent(store, ZONE, 88)
+    t.eq(Airtime.Descent(store, ZONE), 86)
+end)
+
+t.test("a cluster is a cluster wherever it sits, not only near 86", function()
+    local store = {}
+    for _, secs in ipairs({ 120, 122, 125, 20 }) do Airtime.NoteDescent(store, ZONE, secs) end
+    local typical, n, _, _, _, _, source = Airtime.Descent(store, ZONE)
+    t.eq(source, "zone")
+    t.eq(typical, 122, "the estimator finds agreement, it does not assume the answer")
+    t.eq(n, 3)
 end)

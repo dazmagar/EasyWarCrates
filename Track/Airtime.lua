@@ -76,12 +76,21 @@ Airtime.CONFIDENT_N = CONFIDENT_N
 -- Samples are kept individually rather than folded into a running sum, for the
 -- same reason the interval gaps are: with one reading per zone a mean is not a
 -- measurement, and the spread is the thing worth seeing.
--- Eight positional arguments is one too many; if another diagnostic joins
--- them the tail should become a table.
-function Airtime.NoteDescent(store, zoneID, seconds, overlapped, pos, partial, lag, flip)
+-- info carries the diagnostics, as a table, because another one joined and the
+-- eighth positional argument was already one too many:
+--
+--   overlapped  parachute and on-ground vignettes were live in the same sweep
+--   partial     the parachute was already in the air when we first saw it
+--   pos         where it landed
+--   dist        how far the player stood from it, percent of map
+--   lag         how long the transport circled before letting go
+--   flip        when the parachute's art changed, if it did
+function Airtime.NoteDescent(store, zoneID, seconds, info)
     if type(store) ~= "table" or not zoneID then return nil end
     seconds = tonumber(seconds)
     if not seconds or seconds < DESCENT_MIN or seconds > DESCENT_MAX then return nil end
+    info = info or {}
+    local pos = info.pos
 
     local list = store[zoneID]
     if type(list) ~= "table" or list.n then
@@ -98,10 +107,15 @@ function Airtime.NoteDescent(store, zoneID, seconds, overlapped, pos, partial, l
     -- it was not recorded -- so the question could be argued but not settled.
     list[#list + 1] = {
         secs = seconds,
-        overlapped = overlapped or nil,
-        partial = partial or nil,
-        lag = lag and math.floor(lag + 0.5) or nil,
-        flip = flip and math.floor(flip + 0.5) or nil,
+        overlapped = info.overlapped or nil,
+        partial = info.partial or nil,
+        lag = info.lag and math.floor(info.lag + 0.5) or nil,
+        flip = info.flip and math.floor(info.flip + 0.5) or nil,
+        -- Eversong reads 14, 43 and 84 against a 86 cluster in four other
+        -- zones. If a parachute is only drawn once it has fallen into
+        -- vignette range then every distant reading is truncated, and how far
+        -- away the player stood is the number that would show it.
+        dist = info.dist and math.floor(info.dist * 10 + 0.5) / 10 or nil,
         x = pos and math.floor(pos.x * 1000 + 0.5) / 10 or nil,
         y = pos and math.floor(pos.y * 1000 + 0.5) / 10 or nil,
     }
@@ -123,24 +137,91 @@ end
 -- measures however much of the fall they happened to catch, which is a lower
 -- bound on the real figure; averaged in with complete readings it pulls the
 -- answer down by an unknowable amount every time.
-function Airtime.Descent(store, zoneID)
+-- Readings this close together are describing the same thing.
+local CLUSTER_WINDOW = 10
+-- Below this, a cluster is a coincidence rather than an agreement.
+local CLUSTER_MIN = 3
+Airtime.CLUSTER_WINDOW, Airtime.CLUSTER_MIN = CLUSTER_WINDOW, CLUSTER_MIN
+
+local function median(sorted, from, to)
+    local n = to - from + 1
+    if n % 2 == 1 then return sorted[from + (n - 1) / 2] end
+    return (sorted[from + n / 2 - 1] + sorted[from + n / 2]) / 2
+end
+
+-- The densest run of readings that agree, as first and last index into a
+-- sorted list. nil when nothing agrees with anything.
+--
+-- A plain median cannot survive this data. Eversong holds 14, 43, 84 and 92
+-- and its median is 64, which describes no drop that has ever happened there;
+-- Slayer's Rise reads 103 the same way. The tails are not the descent varying.
+-- Zul'Aman measured 85 and 44 at one drop point and Slayer's Rise 91 and 134
+-- at another, so the same crate falling on the same spot reads forty seconds
+-- apart -- that is the measurement, not the fall. Both tails have a mechanism:
+-- a parachute seen late reads short, an on-ground vignette seen late reads
+-- long. What is left when they are set aside is a cluster near 86 in every
+-- zone measured so far.
+local function densest(sorted)
+    local bestFrom, bestTo, bestN
+    local from = 1
+    for to = 1, #sorted do
+        while sorted[to] - sorted[from] > CLUSTER_WINDOW do from = from + 1 end
+        local n = to - from + 1
+        if not bestN or n > bestN then bestFrom, bestTo, bestN = from, to, n end
+    end
+    if not bestN or bestN < CLUSTER_MIN then return nil end
+    return bestFrom, bestTo, bestN
+end
+
+local function fullReadings(store, zoneID)
     local list = store and store[zoneID]
-    if type(list) ~= "table" or #list == 0 then return DESCENT_GUESS, 0 end
+    if type(list) ~= "table" then return {}, 0, 0 end
     local full, over, part = {}, 0, 0
     for _, d in ipairs(list) do
-        if d.partial then
-            part = part + 1
-        else
-            full[#full + 1] = d.secs
-        end
+        if d.partial then part = part + 1 else full[#full + 1] = d.secs end
         if d.overlapped then over = over + 1 end
     end
-    local n = #full
-    if n == 0 then return DESCENT_GUESS, 0, nil, nil, over, part end
     table.sort(full)
-    local mid = (n % 2 == 1) and full[(n + 1) / 2]
-        or (full[n / 2] + full[n / 2 + 1]) / 2
-    return mid, n, full[1], full[n], over, part
+    return full, over, part
+end
+
+-- typical, n, min, max, overlappedCount, partialCount, source.
+--
+-- source says where the figure came from: "zone" when this zone's own readings
+-- agree, "pooled" when they do not and every zone's readings were used
+-- instead, "guess" when there is nothing. n counts what the figure rests on,
+-- not how many readings exist, because a figure resting on three agreeing
+-- readings out of eleven is worth three.
+function Airtime.Descent(store, zoneID)
+    local full, over, part = fullReadings(store, zoneID)
+    if #full == 0 then return DESCENT_GUESS, 0, nil, nil, over, part, "guess" end
+
+    local from, to, n = densest(full)
+    if from then
+        return median(full, from, to), n, full[1], full[#full], over, part, "zone"
+    end
+
+    -- Too few readings to have disagreed. Two cannot form a cluster and two
+    -- cannot contradict each other either, so the plain middle of what there
+    -- is remains the best available answer -- and it is what a zone nobody has
+    -- measured much would otherwise lose.
+    if #full < CLUSTER_MIN then
+        return median(full, 1, #full), #full, full[1], full[#full], over, part, "zone"
+    end
+
+    -- This zone has not agreed with itself. Every zone's readings together
+    -- still cluster, and a figure from that beats a median of this zone's
+    -- contradictions: Eversong would otherwise report 64 seconds.
+    local pooled = {}
+    for id in pairs(store or {}) do
+        for _, secs in ipairs((fullReadings(store, id))) do pooled[#pooled + 1] = secs end
+    end
+    table.sort(pooled)
+    local pf, pt, pn = densest(pooled)
+    if pf then
+        return median(pooled, pf, pt), pn, full[1], full[#full], over, part, "pooled"
+    end
+    return DESCENT_GUESS, 0, full[1], full[#full], over, part, "guess"
 end
 
 -- The individual readings, for inspection.
@@ -208,7 +289,7 @@ end
 -- measurement has to be scored against -- scoring a corrected estimate would
 -- drive the bias to zero and quietly remove the correction that earned it.
 function Airtime.ETA(store, zoneID, fit, target, fallingSince, now, releaseStore)
-    local descent, n = Airtime.Descent(store, zoneID)
+    local descent, n, _, _, _, _, source = Airtime.Descent(store, zoneID)
 
     if fallingSince then
         local left = descent - (now - fallingSince)
@@ -216,6 +297,7 @@ function Airtime.ETA(store, zoneID, fit, target, fallingSince, now, releaseStore
             phase = left > 0 and "falling" or "down",
             toGround = left > 0 and left or 0,
             descentN = n,
+            descentSource = source,
         }
     end
 
@@ -232,5 +314,6 @@ function Airtime.ETA(store, zoneID, fit, target, fallingSince, now, releaseStore
         biasN = biasN,
         toGround = toRelease + descent,
         descentN = n,
+        descentSource = source,
     }
 end
