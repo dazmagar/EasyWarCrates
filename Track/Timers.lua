@@ -17,6 +17,10 @@ ns.Timers = Timers
 -- and no timer pretends otherwise -- Entry.precise is what the UI reads to
 -- decide whether to show a countdown or a "~" estimate.
 local PRECISION = {
+    -- An NPC announcing the cycle. Ranked with a flying catch because it is
+    -- one: the line is scripted to the spawn, and it arrives before the
+    -- transport is near enough to show a vignette.
+    yell     = 3,
     flying   = 3,   -- the transport, caught in the air
     falling  = 2,   -- under its parachute, seen to leave the transport
     -- A parachute we only joined partway through. It looks like a falling
@@ -26,6 +30,9 @@ local PRECISION = {
     -- Zul'Aman measured a 989s cycle against a true ~1090 with both ends of
     -- the gap seeded this way.
     midfall  = 1,
+    -- Somebody else's anchor, shared without saying how they got it.
+    -- Ranked with the weakest thing it could have been.
+    anchor   = 1,
     ground   = 1,   -- found already landed
     claimed  = 1,   -- found already looted
     manual   = 0,   -- typed in by hand

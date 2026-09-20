@@ -21,6 +21,7 @@ ADDON_FILES = [
     "Data/Zones.lua",
     "Data/DropPoints.lua",
     "Data/Vignettes.lua",
+    "Data/Announcers.lua",
     "Core/Zones.lua",
     "Detect/Shard.lua",
     "Detect/Heading.lua",
@@ -28,8 +29,10 @@ ADDON_FILES = [
     "Track/Timers.lua",
     "Track/Learn.lua",
     "Track/Route.lua",
+    "Track/Remote.lua",
     "Track/Airtime.lua",
     "UI/Model.lua",
+    "UI/Manage.lua",
 ]
 
 # Create frames and register events at load, so they only run in game.
@@ -42,9 +45,11 @@ ADDON_FILES = [
 GAME_ONLY_FILES = [
     "Detect/Scanner.lua",
     "Core/Main.lua",
+    "Core/Comm.lua",
     "Core/Commands.lua",
     "UI/Window.lua",
     "UI/Minimap.lua",
+    "UI/DataPanel.lua",
     "UI/Settings.lua",
 ]
 
@@ -92,6 +97,15 @@ def run_specs() -> tuple[int, int]:
 
 
 def main() -> int:
+    # Windows hands stdout a cp1252 encoder, which raises on the first
+    # non-ASCII character. A spec that fails on a Cyrillic announcer phrase
+    # would take the whole run down with a traceback instead of naming the test
+    # that failed -- a suite that cannot report a failure is worse than one
+    # that has none.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     syntax_bad = check_syntax()
     lint_bad = lint.main(ROOT, ADDON_FILES + GAME_ONLY_FILES)
     passed, failed = run_specs()
