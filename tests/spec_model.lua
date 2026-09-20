@@ -239,3 +239,34 @@ t.test("no transport at all is still no headline", function()
     ns.Scanner = prev
     t.eq(head, nil, "this is the one case the window should say nothing for")
 end)
+
+-- A timer belongs to a shard. Landing on a different copy of the zone is why
+-- a raid flies out, waits, and nothing comes: the crate is there, its cycle is
+-- in another phase. The row has to say so.
+local function standingOn(shard)
+    ns.Scanner = { CurrentShard = function() return shard end }
+end
+
+t.test("a timer learned on another shard is marked as such", function()
+    standingOn(999)
+    local rows = Model.BuildRows(db({ ZA, 7, T0 - 100 }), nil, T0)
+    ns.Scanner = nil
+    t.eq(rows[1].shardID, 7)
+    t.eq(rows[1].hereShard, 999)
+    t.ok(rows[1].wrongShard, "7 is not 999")
+end)
+
+t.test("standing on the shard the timer came from is not a mismatch", function()
+    standingOn(7)
+    local rows = Model.BuildRows(db({ ZA, 7, T0 - 100 }), nil, T0)
+    ns.Scanner = nil
+    t.notOk(rows[1].wrongShard)
+end)
+
+t.test("not knowing which shard you are in is not a mismatch either", function()
+    standingOn(nil)
+    local rows = Model.BuildRows(db({ ZA, 7, T0 - 100 }), nil, T0)
+    ns.Scanner = nil
+    t.notOk(rows[1].wrongShard, "silence is not evidence of being in the wrong place")
+    t.eq(rows[1].hereShard, nil)
+end)

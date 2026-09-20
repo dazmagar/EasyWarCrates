@@ -54,7 +54,16 @@ local function makeRow(parent, index)
         if not d then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine(ns.GetZoneName(d.zoneID))
-        GameTooltip:AddLine(("shard %s"):format(tostring(d.shardID or "?")), 0.7, 0.7, 0.7)
+        if d.wrongShard then
+            GameTooltip:AddLine(("shard %s -- you are in %s"):format(
+                tostring(d.shardID), tostring(d.hereShard)), 1, 0.4, 0.4)
+            GameTooltip:AddLine("This countdown belongs to a different copy of the zone. "
+                .. "The crate is still there, its cycle is simply in another phase, which is "
+                .. "why a raid can fly out, wait, and see no transport at all.",
+                1, 0.5, 0.3, true)
+        else
+            GameTooltip:AddLine(("shard %s"):format(tostring(d.shardID or "?")), 0.7, 0.7, 0.7)
+        end
         if d.live then
             GameTooltip:AddLine(
                 d.live.phase == "ground" and "a crate is on the ground here now"
@@ -126,7 +135,11 @@ local function paintRow(r, row, isNext)
         -- A tilde says the timer was seeded from a crate found already on the
         -- ground, so the cycle is right but the phase is only as good as the
         -- moment it happened to be spotted.
-        local clock = (row.precise and "" or "~") .. ns.FormatClock(row.remaining):gsub("^%s+", "")
+        -- A countdown for another copy of the zone is not merely imprecise, it
+        -- is about somewhere else, so it is marked apart from the ~ that means
+        -- "seeded from a crate found on the ground".
+        local mark = row.wrongShard and "|cffff5555?|r" or (row.precise and "" or "~")
+        local clock = mark .. ns.FormatClock(row.remaining):gsub("^%s+", "")
         local leave = ""
         if row.leaveIn then
             leave = row.status == "missed" and " |cffff5555miss|r"

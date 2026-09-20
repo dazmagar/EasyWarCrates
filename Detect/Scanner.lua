@@ -254,10 +254,36 @@ end
 local shardSeen = {}
 local SHARD_FRESH = 300
 
+-- When this zone was last observed to be a different copy of itself. A
+-- measurement that spans a re-shard is not a measurement of one crate.
+local shardChangedAt = {}
+
 local function noteShard(zoneID, shard, stamp, from)
     if not zoneID or not shard then return end
     shardSeen[zoneID] = shardSeen[zoneID] or {}
+    local was = shardSeen[zoneID][from]
+    if was and was.shard ~= shard then shardChangedAt[zoneID] = stamp end
     shardSeen[zoneID][from] = { shard = shard, at = stamp }
+end
+
+-- Whether this client has been in THIS copy of the zone long enough for a fall
+-- to have started in front of it.
+--
+-- The watch that decides whether a parachute was caught from the start is kept
+-- per zone, while the reading it guards is keyed per zone AND shard. Re-shard
+-- in the middle of a fall and the key is new, so "this parachute was not there
+-- a moment ago" is trivially true -- the key was not there a moment ago -- and
+-- a fall that was half over is recorded as though it were watched throughout.
+--
+-- That is the last explanation standing for the short readings. It is not the
+-- drop point: Zul'Aman measured 85s and 44s at one spot. It is not the
+-- distance: Eversong measured 87s from 17.2% of the map away on 20 Sep, which
+-- killed that idea outright. It is not the overlap flag, which is set on 31
+-- readings out of 33. Re-sharding fits what is left, and Voidstorm went
+-- through three shards in one evening.
+local function reshardedRecently(zoneID, stamp)
+    local changed = shardChangedAt[zoneID]
+    return changed ~= nil and (stamp - changed) < MIN_WATCH
 end
 
 local function heldShard(zoneID, from, now)
@@ -285,6 +311,39 @@ end
 
 function Scanner.UnitShard(zoneID, now)
     return heldShard(zoneID, "unit", now)
+end
+
+-- Read every creature already on screen, rather than waiting to be told about
+-- a new one.
+--
+-- Asking the game to pick a target would be the obvious way and is not
+-- available: TargetNearestEnemy and its relatives are protected and run only
+-- from a keypress, so an addon calling one gets ADDON_ACTION_BLOCKED. Nothing
+-- here needs it. Nameplates are already in memory and reading them is free.
+--
+-- This exists for the case the events cannot cover: right after a reload the
+-- plates are up but NAME_PLATE_UNIT_ADDED fired before this addon loaded, so
+-- nothing would arrive until something new wandered past. An announcer spoke
+-- into exactly that gap on 20 Sep and could not be timed.
+local function sweepForShard(zoneID, stamp)
+    if not zoneID then return nil end
+    local plates = C_NamePlate and C_NamePlate.GetNamePlates and C_NamePlate.GetNamePlates()
+    for _, plate in ipairs(plates or {}) do
+        local shard = ns.Shard.FromGUID(UnitGUID(plate.namePlateUnitToken))
+        if shard then
+            noteShard(zoneID, shard, stamp, "unit")
+            return shard
+        end
+    end
+    -- A pet is a creature too, and so is whatever happens to be targeted.
+    for _, unit in ipairs({ "target", "mouseover", "pet", "focus" }) do
+        local shard = ns.Shard.FromGUID(UnitGUID(unit))
+        if shard then
+            noteShard(zoneID, shard, stamp, "unit")
+            return shard
+        end
+    end
+    return nil
 end
 
 local function noteShardFromUnit(unit)
@@ -317,6 +376,7 @@ function Scanner.Reset()
     lastSweptStamp, lastFalling = {}, {}
     noPosWarned = {}
     zoneWatchSince = {}
+    shardChangedAt = {}
     liveCrate = {}
     stopPolling()
 end
@@ -526,6 +586,21 @@ function Scanner.OnVignettesUpdated()
 
     for _, guid in ipairs(guids) do
         local info = C_VignetteInfo.GetVignetteInfo(guid)
+
+        -- Any vignette at all gives the shard, not only a crate's. A rare
+        -- elite standing about is the difference between knowing which copy of
+        -- the zone this is and having to ask the player to mouse over
+        -- something. Voidstorm's elites read 207300 beside a creature GUID
+        -- saying 207300, so they are the same number.
+        --
+        -- This matters most right after a reload with nothing targeted and no
+        -- nameplates up, which is exactly when an announcer spoke on 20 Sep
+        -- and could not be timed.
+        if info then
+            local anyShard = ns.Shard.FromVignetteGUID(guid)
+            if anyShard then noteShard(zoneID, anyShard, stamp, "vignette") end
+        end
+
         local stage = info and ns.VignetteStage(info.vignetteID)
         if stage then
             local pos, posMap = vignettePosition(guid, zoneID, rawMap)
@@ -538,9 +613,6 @@ function Scanner.OnVignettesUpdated()
             end
             if usable then
                 local shard = ns.Shard.FromVignetteGUID(guid)
-                -- A crate vignette is in this client's own copy of the zone,
-                -- so its shard is the zone's shard.
-                if shard then noteShard(zoneID, shard, stamp, "vignette") end
 
                 if stage == "flying" and (tNow - (recentDrop[zoneID] or -math.huge)) <= DROP_COOLDOWN then
                     -- This zone's crate is already down. Whatever this
@@ -629,7 +701,12 @@ function Scanner.OnVignettesUpdated()
                                 -- then only because the player has not moved.
                                 local sawItStart
                                 local arrived = arrivedAt[zoneID]
-                                if arrived and (stamp - arrived) <= ARRIVED_RECENT then
+                                if reshardedRecently(zoneID, stamp) then
+                                    -- A different copy of the zone since this
+                                    -- fall could have begun. Whatever is under
+                                    -- this parachute, we did not watch it go.
+                                    sawItStart = false
+                                elseif arrived and (stamp - arrived) <= ARRIVED_RECENT then
                                     sawItStart = true
                                 elseif prevSweep and (stamp - prevSweep) <= SWEEP_FRESH
                                     and not prevFalling[key]
@@ -802,12 +879,14 @@ function Scanner.OnAnnouncement(text, npcName, guid)
     -- The speaker's own GUID would be exact, and has been nil every time, so
     -- the shard this client is standing in is the answer: the announcer is in
     -- the zone with the player.
-    local shard = ns.Shard.FromGUID(guid) or Scanner.CurrentShard(zoneID, stamp)
+    local shard = ns.Shard.FromGUID(guid)
+        or Scanner.CurrentShard(zoneID, stamp)
+        or sweepForShard(zoneID, stamp)
     note.shard = shard
     if not shard then
-        return ns.Print(("|cffff8800%s announced a crate in %s, but this client does not know"
-            .. " which shard it is in|r |cff777777-- not timed; mouse over anything alive|r")
-            :format(npcName, ns.GetZoneName(zoneID)))
+        return ns.Print(("|cffff8800%s announced a crate in %s, but nothing here will say"
+            .. " which shard it is|r |cff777777-- not timed; no vignette, no nameplate,"
+            .. " nothing targeted|r"):format(npcName, ns.GetZoneName(zoneID)))
     end
 
     -- Set only once the timer has actually moved. Reporting the phrase match
@@ -849,6 +928,11 @@ frame:SetScript("OnEvent", function(_, event, ...)
         noteShardFromUnit("mouseover")
     else
         Scanner.Reset()
+        -- Entering a zone re-shards you, so whatever was known is now wrong.
+        -- Read the plates already on screen rather than waiting for one to
+        -- wander past.
+        local zoneID = ns.Zones.Normalize(playerMapID())
+        if zoneID then sweepForShard(zoneID, stampClock()) end
     end
 end)
 

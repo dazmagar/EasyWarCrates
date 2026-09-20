@@ -76,6 +76,8 @@ end
 --   missed      cycles that passed unobserved
 --   precise     false when seeded from a crate found already on the ground
 --   stale       too many missed cycles to present as live
+--   wrongShard  this timer was learned on a different copy of the zone
+--   hereShard   the shard this client is standing in, when known
 --   inRoute     whether this zone is part of the rotation
 --   live        a crate down or falling in that zone now: { phase, toGround }
 --   next        the one row worth acting on
@@ -91,7 +93,17 @@ function Model.BuildRows(db, route, now)
         -- released, so without this the row reads "18:10" at the exact moment
         -- there is one on the ground to go and collect.
         local live = ns.Model.LiveFor(zoneID, now)
+        -- A timer belongs to a shard, and entering a zone hands you one you
+        -- did not choose. Landing on a different copy of the zone than the
+        -- timer was learned on is why a raid flies out, waits, and no
+        -- transport comes: the crate is there, its cycle is simply in another
+        -- phase. Saying so is the difference between twenty wasted minutes and
+        -- knowing to move on.
+        local here = ns.Scanner and ns.Scanner.CurrentShard
+            and ns.Scanner.CurrentShard(zoneID, now)
         rows[#rows + 1] = {
+            wrongShard = (here ~= nil and shardID ~= nil and here ~= shardID) or nil,
+            hereShard  = here,
             live      = live,
             zoneID    = zoneID,
             abbr      = ns.GetZoneAbbr(zoneID),
