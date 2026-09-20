@@ -11,6 +11,7 @@ Core/Init.lua
 Data/Zones.lua
 Data/DropPoints.lua
 Data/Vignettes.lua
+Data/Announcers.lua
 Core/Zones.lua
 Detect/Shard.lua
 Detect/Heading.lua
@@ -18,15 +19,19 @@ Detect/Predict.lua
 Track/Timers.lua
 Track/Learn.lua
 Track/Route.lua
+Track/Remote.lua
 Track/Airtime.lua
 UI/Model.lua
+UI/Manage.lua
 
 # Below here the files create frames and register events at load, so they only
 # run in game. Kept deliberately thin -- they move numbers between the game and
 # the modules above, and hold no logic of their own.
 Detect/Scanner.lua
 Core/Main.lua
+Core/Comm.lua
 Core/Commands.lua
 UI/Window.lua
 UI/Minimap.lua
+UI/DataPanel.lua
 UI/Settings.lua

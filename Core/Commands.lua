@@ -13,6 +13,7 @@ HANDLERS.show = function() ns.ToggleWindow(true) end
 HANDLERS.hide = function() ns.ToggleWindow(false) end
 HANDLERS.window = function() ns.ToggleWindow() end
 HANDLERS.config = function() Settings.OpenToCategory(ns.settingsCategoryID) end
+HANDLERS.data = function() ns.ToggleDataPanel() end
 
 HANDLERS.status = function()
     local rawMap = C_Map.GetBestMapForUnit("player")
@@ -198,18 +199,26 @@ HANDLERS.airtime = function(rest)
     ns.Print("time under the parachute -- the middle reading, per zone:")
     local any = false
     for zoneID in pairs(ns.ZONES) do
-        local mean, n, lo, hi, over = ns.Airtime.Descent(ns.db.descent, zoneID)
+        local mean, n, lo, hi, over, _, source = ns.Airtime.Descent(ns.db.descent, zoneID)
         if n > 0 then
             any = true
-            ns.Print(("  %-3s %3ds  |cff777777from %d drop%s, range %d-%d%s|r"):format(
-                ns.GetZoneAbbr(zoneID), math.floor(mean + 0.5), n, n == 1 and "" or "s",
+            ns.Print(("  %-3s %3ds  |cff777777%s%d drop%s, range %d-%d%s|r"):format(
+                ns.GetZoneAbbr(zoneID), math.floor(mean + 0.5),
+                -- A figure this zone borrowed must not read like one it
+                -- measured. Eversong's own readings average out to 64s, which
+                -- is not a time any crate there has ever taken.
+                source == "pooled" and "its readings disagree, so this is every zone's " or "from ",
+                n, n == 1 and "" or "s",
                 math.floor(lo + 0.5), math.floor(hi + 0.5),
                 ""))
             for i, d in ipairs(ns.Airtime.DescentSamples(ns.db.descent, zoneID) or {}) do
                 -- The overlap flag is not shown: it fired on 19 readings out
                 -- of 19, so it separates nothing. The release lag might.
-                ns.Print(("   %2d. %3ds  %s%s%s%s"):format(i, math.floor(d.secs + 0.5),
+                ns.Print(("   %2d. %3ds  %s%s%s%s%s"):format(i, math.floor(d.secs + 0.5),
                     d.x and ("|cff777777at %.1f, %.1f|r"):format(d.x, d.y) or "|cff777777spot not recorded|r",
+                    -- The open question: does a fall watched from further away
+                    -- read short because its parachute is drawn late.
+                    d.dist and ("  |cffffd100%.1f%% away|r"):format(d.dist) or "",
                     d.lag and ("  |cff777777%ds circling first|r"):format(d.lag) or "",
                     d.flip and ("  |cff33ff99art changed at %ds|r"):format(d.flip) or "",
                     d.partial and "  |cffff8800joined mid-fall, not counted|r" or ""))
@@ -243,6 +252,91 @@ end
 -- is the one the addon uses, but a vignette GUID need not share a creature
 -- GUID's field layout, so this prints both side by side with every field
 -- numbered. Target or mouseover any creature and run it.
+-- Send the call by hand, and say why it did not go if it did not.
+HANDLERS.announce = function()
+    local zoneID = ns.Zones.Normalize(C_Map.GetBestMapForUnit("player"))
+    if not zoneID then return ns.Print("not standing in a tracked zone.") end
+    local pos = C_Map.GetPlayerMapPosition(zoneID, "player")
+    if not pos then return ns.Print("the game will not say where you are.") end
+
+    local x, y = pos:GetXY()
+    local result = ns.Comm.Announce(zoneID, x, y)
+    local why = {
+        ["off"] = "turned off in settings",
+        ["not-privileged"] = ("you are %s; only a leader or assistant may send"):format(ns.Comm.Role()),
+        ["too-soon"] = "this zone was announced within the last four minutes",
+        ["no-pin"] = "the map pin did not take, so there is no link to send",
+        ["sent"] = nil,
+    }
+    ns.Print(result == "sent" and "|cff33ff99sent to the group|r"
+        or ("|cffff8800not sent|r |cff777777-- %s|r"):format(why[result] or tostring(result)))
+end
+
+-- Who is broadcasting what, including addons we cannot read.
+--
+-- The point is to tell three failures apart: nobody in the group runs anything
+-- (the list is empty), somebody does but their payload is sealed (lines saying
+-- "not decoded"), and somebody does and we took it (a zone and a shard).
+HANDLERS.comm = function()
+    ns.Print(("you are %s; sharing is %s"):format(
+        ns.Comm.Role(), ns.db.share and "|cff33ff99on|r" or "|cffff8800off|r"))
+    ns.Print(("listening on: %s"):format(table.concat(ns.Comm.PREFIXES, ", ")))
+    ns.Print(("reports held: %d"):format(ns.Remote.Count(ns.remote, GetServerTime())))
+
+    local heard = ns.Comm.heard
+    if #heard == 0 then
+        return ns.Print("|cff777777nothing heard yet. Addon traffic only reaches you from"
+            .. " your own party, raid or guild, so alone you will see nothing.|r")
+    end
+    local now = GetServerTime()
+    for i = 1, #heard do
+        local h = heard[i]
+        ns.Print(("|cff777777%3ds|r [%s] |cffffffff%s|r %s |cff777777(%s)|r"):format(
+            now - h.at, tostring(h.via), tostring(h.from), tostring(h.text),
+            tostring(h.verdict)))
+    end
+end
+
+-- What the announcer has been heard saying, and whether it counted.
+--
+-- The phrases and the NPC names are both localised, and a locale this client
+-- speaks that the list does not is silent rather than wrong: nothing anchors
+-- and nobody finds out. This is how it gets found out.
+HANDLERS.yells = function()
+    local names = {}
+    for name in pairs(ns.ANNOUNCER_NAMES) do names[#names + 1] = name end
+    table.sort(names)
+    ns.Print("listening for: " .. table.concat(names, ", "))
+
+    local heard = ns.Scanner.heard or {}
+    if #heard == 0 then
+        return ns.Print("|cff777777none of them has said anything yet. They speak when a cycle"
+            .. " starts, so this stays empty until you sit through one.|r")
+    end
+
+    local now = GetServerTime()
+    for i = 1, #heard do
+        local h = heard[i]
+        local what = h.anchored and "|cff33ff99anchored the timer|r"
+            or h.matched and "|cffff8800recognised but not timed|r"
+            or "|cffff8800not recognised|r"
+        ns.Print(("%s |cff777777%ds ago, %s|r"):format(what, now - h.at,
+            h.zoneID and ns.GetZoneName(h.zoneID) or "not a tracked zone"))
+        ns.Print(("   %s: %s"):format(tostring(h.npc), tostring(h.text)))
+        -- The shard has to come out of the speaker's own GUID and the first
+        -- live announcement gave none, so the GUID is shown whenever it did
+        -- not yield one.
+        if h.matched and not h.anchored then
+            ns.Print(("   |cff777777shard=%s, guid=%s, a creature nearby says %s|r"):format(
+                tostring(h.shard), tostring(h.guid), tostring(h.unitShard)))
+            ns.Print("   |cff777777a creature's number and a crate vignette's number are not"
+                .. " the same thing -- /ewc shard compares them|r")
+        end
+    end
+    ns.Print("|cff777777not recognised is either idle chatter or wording this locale needs"
+        .. " adding -- worth sending on if a cycle really started.|r")
+end
+
 HANDLERS.shard = function()
     local unit = UnitExists("target") and "target" or (UnitExists("mouseover") and "mouseover")
     if not unit then
@@ -553,11 +647,15 @@ HANDLERS.help = function()
     ns.Print("commands:")
     ns.Print("  /ewc window   -- show or hide the tracker window")
     ns.Print("  /ewc config   -- open the settings panel")
+    ns.Print("  /ewc data     -- timers, measurements and the route, with a way to remove any")
     ns.Print("  /ewc pin      -- test placing a map pin where you stand")
     ns.Print("  /ewc status   -- what zone the addon thinks you are in")
     ns.Print("  /ewc map      -- the map chain above you, and what it resolves to")
     ns.Print("  /ewc geo      -- where the six zones sit relative to each other")
     ns.Print("  /ewc scan     -- every vignette in range, raw. Use this first on a new patch")
+    ns.Print("  /ewc yells    -- what the crate announcer said, and whether it counted")
+    ns.Print("  /ewc comm     -- what other players and their addons are broadcasting")
+    ns.Print("  /ewc announce -- post where you stand to the group, as a pin they can click")
     ns.Print("  /ewc predict  -- live heading fit and where it points")
     ns.Print("  /ewc points   -- catalogued drop spots for this zone")
     ns.Print("  /ewc route    -- the rotation: what to fly to and when to leave")

@@ -12,8 +12,20 @@ local DEFAULTS = {
     gaps      = nil,    -- observed intervals between drops
     travel    = nil,    -- per-zone capital-to-zone overrides
     route     = nil,    -- the rotation, as zone ids in order
+    -- Everything this addon says, kept so it can be read back after the fact.
+    -- /chatlog does not capture it: that logs the CHAT_MSG_* stream, and an
+    -- addon's output goes straight to the frame through AddMessage without
+    -- ever becoming a chat message. WarCratePredict keeps its own log for the
+    -- same reason. Written to disk on /reload, like everything else here.
+    log       = nil,
     descent   = nil,    -- measured parachute times, per zone
     release   = nil,    -- how wrong the release-time estimate runs, per zone
+    -- Tell the group what this client sees. Receiving needs no switch:
+    -- hearing costs nothing and never touches the saved timers.
+    share       = true,
+    -- Off by design. Leading a raid is not consent to have an addon speak
+    -- in its chat, and only a leader or assistant can send at all.
+    announce    = false,
     minimap     = true,   -- show the minimap button
     windowShown = true,   -- show the tracker window
     -- Deliberately absent: minimapAngle and window. They hold where the player
@@ -26,14 +38,28 @@ ns.DEFAULTS = DEFAULTS
 
 local PREFIX = "|cff33ddaa[EWC]|r "
 
+-- Enough to cover a farming session several cycles long, and small enough
+-- that nobody notices it in the saved variables.
+local LOG_MAX = 400
+
+local function remember(line)
+    local log = ns.db and ns.db.log
+    if not log then return end
+    log[#log + 1] = { at = GetServerTime(), text = line }
+    while #log > LOG_MAX do table.remove(log, 1) end
+end
+
 function ns.Print(...)
-    print(PREFIX .. string.join(" ", tostringall(...)))
+    local line = string.join(" ", tostringall(...))
+    remember(line)
+    print(PREFIX .. line)
 end
 
 function ns.Debug(...)
-    if ns.db and ns.db.verbose then
-        print("|cff777777[EWC]|r " .. string.join(" ", tostringall(...)))
-    end
+    if not (ns.db and ns.db.verbose) then return end
+    local line = string.join(" ", tostringall(...))
+    remember(line)
+    print("|cff777777[EWC]|r " .. line)
 end
 
 local function applyDefaults(db)
@@ -51,6 +77,11 @@ local function applyDefaults(db)
     db.route   = db.route or {}
     db.descent = db.descent or {}
     db.release = db.release or {}
+    db.log     = db.log or {}
+    -- Deliberately not on db. db IS the saved table, so a store hung off
+    -- it is a store written to disk, and what other players reported must
+    -- not survive the session that heard it.
+    ns.remote = ns.Remote.New()
     return db
 end
 
@@ -76,6 +107,27 @@ function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict)
     else
         ns.Debug(("crate %s in %s shard %s -> %s (timer left alone)"):format(
             stage, ns.GetZoneName(zoneID), tostring(shardID), verdict))
+    end
+
+    -- Guarded, and the guard is the point. Everything below this line is the
+    -- addon's core work, and a nil call here would stop all of it without
+    -- saying so: no pin, no prediction score, no release measurement, no
+    -- learned spot. Sharing is the newest and least important thing this
+    -- function does, so it is the thing that gives way.
+    if ns.Comm then ns.Comm.Report(zoneID, shardID, stage, pos) end
+
+    -- Seeing it ourselves is what a report was waiting for. If a scout caught
+    -- the transport and we have only found the crate on the ground, their
+    -- anchor is the better one and this is where it is taken.
+    if ns.Remote then
+        local promoted, report = ns.Remote.Promote(ns.remote, ns.db.crates, zoneID, shardID)
+        if promoted == "new" or promoted == "refined" then
+            ns.Print(("  |cff777777timer taken from %s, who saw it %s (via %s)|r"):format(
+                report.from, report.stage, tostring(report.via)))
+        end
+        -- Their account of this crate has been overtaken by seeing it. Kept
+        -- any longer it would go on describing a stage the crate has left.
+        ns.Remote.Supersede(ns.remote, zoneID, shardID, stage)
     end
 
     -- A crate in view beats a crate predicted, so this overrides any pin the
@@ -136,6 +188,19 @@ function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict)
     end
 end
 
+-- An NPC announcing the cycle. The earliest anchor there is: it fires at the
+-- spawn, before the transport is close enough to draw a vignette, which is the
+-- whole reason for listening.
+function ns.OnSpawnAnnounced(zoneID, shardID, npcName, verdict)
+    if verdict == "new" or verdict == "refined" then
+        ns.Print(("%s |cffffffffshard %s|r -- |cff33ff99%s announced a crate|r"):format(
+            ns.GetZoneName(zoneID), tostring(shardID), npcName))
+    else
+        ns.Debug(("announcement in %s shard %s -> %s (timer left alone)"):format(
+            ns.GetZoneName(zoneID), tostring(shardID), verdict))
+    end
+end
+
 -- The transport has flown through the spot it was called for. Worth saying:
 -- when the crate's own vignette never turns up -- out of range, or the drop
 -- bugging out as one did in Coiled Isle -- this is the only word the player
@@ -147,14 +212,20 @@ end
 
 -- A parachute timed from release to landing. The one leg of the flight that
 -- cannot be computed and has to be measured.
-function ns.OnDescentMeasured(zoneID, seconds, partial)
-    local mean, n, lo, hi = ns.Airtime.Descent(ns.db.descent, zoneID)
-    ns.Print(("|cff33ff99descent measured|r in %s: |cffffd100%ds|r under the parachute%s"):format(
+function ns.OnDescentMeasured(zoneID, seconds, partial, dist)
+    local mean, n, lo, hi, _, _, source = ns.Airtime.Descent(ns.db.descent, zoneID)
+    -- How far away it was watched from is on the line because that is the
+    -- open question, and a reading nobody can see the distance of is a
+    -- reading that cannot answer it.
+    ns.Print(("|cff33ff99descent measured|r in %s: |cffffd100%ds|r under the parachute%s%s"):format(
         ns.GetZoneName(zoneID), math.floor(seconds + 0.5),
+        dist and (" |cffffd100from %.1f%% away|r"):format(dist) or "",
         partial and " |cffff8800(joined mid-fall -- a lower bound, not counted)|r" or ""))
     if n > 1 then
-        ns.Print(("  %d measured here: typically %ds, range %d-%d"):format(
-            n, math.floor(mean + 0.5), math.floor(lo + 0.5), math.floor(hi + 0.5)))
+        ns.Print(("  %d %s: typically %ds, range %d-%d"):format(
+            n, source == "pooled" and "across every zone, this one disagreeing with itself"
+                or "measured here",
+            math.floor(mean + 0.5), math.floor(lo + 0.5), math.floor(hi + 0.5)))
     end
 end
 
@@ -193,7 +264,17 @@ function ns.SetCratePin(zoneID, x, y)
     local set = C_Map.GetUserWaypoint()
     if set then
         ns.Print(("  |cff777777map pin set on %s|r"):format(ns.GetZoneName(zoneID)))
-        return true
+        -- The hyperlink describes whatever waypoint is currently set, not a
+        -- point of our choosing, so it is read here and only when the readback
+        -- agrees about the map. Building the link by hand instead does not
+        -- work: chat strips an untrusted |Hworldmap string to plain text on
+        -- send, which WarCratePredict shipped and had to undo.
+        local link
+        if set.uiMapID == zoneID and C_Map.GetUserWaypointHyperlink then
+            local ok, got = pcall(C_Map.GetUserWaypointHyperlink)
+            if ok and type(got) == "string" and got ~= "" then link = got end
+        end
+        return true, link
     end
     ns.Print(("  |cffff8800the map pin did not take|r |cff777777(the game %s allow one on %s)|r"):format(
         C_Map.CanSetUserWaypoint(zoneID) and "says it does" or "says it does not",
@@ -232,7 +313,9 @@ function ns.OnPrediction(zoneID, result, fit)
     if eta then
         when = (", |cffffd100on the ground in %s|r%s"):format(
             ns.FormatClock(eta.toGround):gsub("^%s+", ""),
-            eta.descentN == 0 and " |cff777777(descent not measured here yet)|r" or "")
+            eta.descentN == 0 and " |cff777777(descent not measured here yet)|r"
+            or eta.descentSource == "pooled"
+                and " |cff777777(descent borrowed: this zone's own readings disagree)|r" or "")
     end
 
     -- An unfirm call names what else is on the line, because that is the whole
@@ -258,7 +341,11 @@ function ns.OnPrediction(zoneID, result, fit)
     if not ns.db.waypoint then
         ns.Print("  |cff777777no map pin: turned off in settings|r")
     else
-        ns.SetCratePin(zoneID, s.x, s.y)
+        -- Only a firm call is worth telling a raid about, and announcing sets
+        -- the pin on the way, because the link it sends IS this client's
+        -- waypoint. Pinning again afterwards would be the same call twice.
+        local said = firm and ns.Comm and ns.Comm.Announce(zoneID, s.x, s.y)
+        if said ~= "sent" then ns.SetCratePin(zoneID, s.x, s.y) end
     end
 end
 

@@ -220,6 +220,83 @@ local function vignettePosition(guid, zoneID, rawMap)
 end
 Scanner.VignettePosition = vignettePosition
 
+-- How far the player stood from a landing, in percent of map. nil when the
+-- game will not say where the player is, which it does during a loading
+-- screen. Declared here because the lint rule refuses a call to a local
+-- defined below its use, which is a bug this addon has already shipped once.
+local function distanceFromPlayer(zoneID, pos)
+    if not pos then return nil end
+    local ok, me = pcall(C_Map.GetPlayerMapPosition, zoneID, "player")
+    if not ok or not me then return nil end
+    local px, py = me:GetXY()
+    if not px or not py then return nil end
+    local dx, dy = px - pos.x, py - pos.y
+    return math.sqrt(dx * dx + dy * dy) * 100
+end
+
+-- Which shard this client is standing in, per zone.
+--
+-- Needed because the announcer's chat event carries no GUID at all -- not a
+-- secret string, nil -- so the one thing that would have given the shard for
+-- free is not there. Confirmed live: "shard=nil from guid nil".
+--
+-- A creature GUID and a crate vignette GUID give the SAME number. That was
+-- doubted for an hour on 20 Sep, on the strength of Voidstorm holding 68, 69
+-- and 207300 at once, and /ewc shard settled it: a creature said 207300 and
+-- the crate vignette beside it said 207300. The three rows were three visits,
+-- not three namespaces, and the shard re-rolling between them is what Prune
+-- exists for. Recording which source a number came from is kept anyway,
+-- because it is what made the question answerable.
+--
+-- Held with a timestamp because the shard re-rolls when you leave and come
+-- back, and one remembered from the last visit would anchor a timer to a copy
+-- of the zone nobody is standing in.
+local shardSeen = {}
+local SHARD_FRESH = 300
+
+local function noteShard(zoneID, shard, stamp, from)
+    if not zoneID or not shard then return end
+    shardSeen[zoneID] = shardSeen[zoneID] or {}
+    shardSeen[zoneID][from] = { shard = shard, at = stamp }
+end
+
+local function heldShard(zoneID, from, now)
+    local held = shardSeen[zoneID] and shardSeen[zoneID][from]
+    if not held then return nil end
+    if (now or stampClock()) - held.at > SHARD_FRESH then return nil end
+    return held.shard
+end
+
+-- The freshest of the two, since they agree. A crate vignette is the more
+-- direct evidence when there is one; a creature is what there is at the moment
+-- a cycle is announced, before any vignette exists.
+function Scanner.CurrentShard(zoneID, now)
+    now = now or stampClock()
+    local seen = shardSeen[zoneID]
+    if not seen then return nil end
+    local best
+    for _, held in pairs(seen) do
+        if (now - held.at) <= SHARD_FRESH and (not best or held.at > best.at) then
+            best = held
+        end
+    end
+    return best and best.shard or nil
+end
+
+function Scanner.UnitShard(zoneID, now)
+    return heldShard(zoneID, "unit", now)
+end
+
+local function noteShardFromUnit(unit)
+    local zoneID = ns.Zones.Normalize(playerMapID())
+    if not zoneID then return end
+    local stamp = stampClock()
+    local held = shardSeen[zoneID] and shardSeen[zoneID].unit
+    if held and (stamp - held.at) < 30 then return end
+    local shard = ns.Shard.FromGUID(UnitGUID(unit))
+    if shard then noteShard(zoneID, shard, stamp, "unit") end
+end
+
 local function stopPolling()
     if ticker then ticker:Cancel(); ticker = nil end
 end
@@ -461,6 +538,9 @@ function Scanner.OnVignettesUpdated()
             end
             if usable then
                 local shard = ns.Shard.FromVignetteGUID(guid)
+                -- A crate vignette is in this client's own copy of the zone,
+                -- so its shard is the zone's shard.
+                if shard then noteShard(zoneID, shard, stamp, "vignette") end
 
                 if stage == "flying" and (tNow - (recentDrop[zoneID] or -math.huge)) <= DROP_COOLDOWN then
                     -- This zone's crate is already down. Whatever this
@@ -574,9 +654,13 @@ function Scanner.OnVignettesUpdated()
                             local lag = releaseLag[key]
                             partialFall[key], releaseLag[key] = nil, nil
                             fallAtlas[key], atlasFlip[key] = nil, nil
+                            local dist = distanceFromPlayer(zoneID, pos)
                             if secs <= DESCENT_PAIR_MAX
-                                and ns.Airtime.NoteDescent(db.descent, zoneID, secs, overlapped, pos, partial, lag, flip) then
-                                ns.OnDescentMeasured(zoneID, secs, partial)
+                                and ns.Airtime.NoteDescent(db.descent, zoneID, secs, {
+                                    overlapped = overlapped, partial = partial,
+                                    pos = pos, lag = lag, flip = flip, dist = dist,
+                                }) then
+                                ns.OnDescentMeasured(zoneID, secs, partial, dist)
                             end
                         elseif stage == "claimed" then
                             fallingSince[key], partialFall[key] = nil, nil
@@ -669,13 +753,100 @@ function Scanner.Evaluate(zoneID, tr)
     end
 end
 
+-- An NPC announcing the cycle. Data/Announcers.lua decides what counts.
+--
+-- The shard comes from the speaker's own GUID, which the chat event hands over
+-- as its twelfth argument. RCT and WarCratePredict both reach instead for a
+-- shard they read off a mouseover or a nameplate, and WarCratePredict wrote
+-- down what that cost: a mob GUID is a different namespace from the crate
+-- vignette's, and gating on it left Zul'Aman eight minutes out. The announcer
+-- is a creature standing in the same copy of the zone as the crate, so its own
+-- GUID is the answer with nothing to reconcile.
+local heard = {}
+Scanner.heard = heard
+local HEARD_MAX = 6
+
+function Scanner.OnAnnouncement(text, npcName, guid)
+    local db = ns.db
+    if not db or not db.enabled then return end
+    if IsInInstance() then return end
+    -- Kept to lines from a known announcer. Everything else in the zone is
+    -- chatter, and a log of it would bury the one line worth reading.
+    if not ns.IsAnnouncer(npcName) then return end
+
+    local zoneID = ns.Zones.Normalize(playerMapID())
+    local matched = ns.IsSpawnAnnouncement(npcName, text)
+    local stamp = stampClock()
+
+    -- The raw GUID is kept because the shard has to be read out of it and the
+    -- first live announcement produced none. Whatever the game really sends is
+    -- the only thing that can explain that, and it is not worth waiting for
+    -- another cycle to find out.
+    local note = { npc = npcName, text = text, matched = matched, guid = ns.Shard.Label(guid),
+                   zoneID = zoneID, at = stamp }
+    table.insert(heard, 1, note)
+    while #heard > HEARD_MAX do table.remove(heard) end
+
+    if not zoneID then return end
+    if not matched then
+        -- A known announcer whose wording is not in the list. Either an idle
+        -- line or a phrasing nobody has catalogued, and only one of those is a
+        -- bug -- which is why it is recorded instead of anchoring.
+        return ns.Debug(("%s said something unrecognised in %s -- /ewc yells"):format(
+            npcName, ns.GetZoneName(zoneID)))
+    end
+
+    -- The speaker's own GUID first, which would be exact. It has been nil on
+    -- every announcement seen so far, so the shard this client is standing in
+    -- is the working answer: the announcer is in the zone with the player.
+    -- The speaker's own GUID would be exact, and has been nil every time, so
+    -- the shard this client is standing in is the answer: the announcer is in
+    -- the zone with the player.
+    local shard = ns.Shard.FromGUID(guid) or Scanner.CurrentShard(zoneID, stamp)
+    note.shard = shard
+    if not shard then
+        return ns.Print(("|cffff8800%s announced a crate in %s, but this client does not know"
+            .. " which shard it is in|r |cff777777-- not timed; mouse over anything alive|r")
+            :format(npcName, ns.GetZoneName(zoneID)))
+    end
+
+    -- Set only once the timer has actually moved. Reporting the phrase match
+    -- as an anchor told the player a crate had been timed when none had.
+    note.anchored = true
+    local verdict, _, gap = ns.Timers.Record(db.crates, zoneID, shard, stamp, "yell")
+    if gap then
+        local noted = ns.Timers.NoteGap(db.gaps, zoneID, gap, ns.GetZoneInterval(zoneID))
+        if noted then ns.OnGapObserved(zoneID, shard, noted) end
+    end
+    ns.OnSpawnAnnounced(zoneID, shard, npcName, verdict)
+end
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("VIGNETTES_UPDATED")
 frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-frame:SetScript("OnEvent", function(_, event)
+-- Say is what the announcers have been observed using and is all RCT listens
+-- for. Yell costs one line and covers the same NPC raising its voice.
+frame:RegisterEvent("CHAT_MSG_MONSTER_SAY")
+frame:RegisterEvent("CHAT_MSG_MONSTER_YELL")
+-- Three ways to be handed a creature GUID without asking the player for
+-- anything. Nameplates alone cover a populated zone; the other two cover
+-- standing somewhere empty with one thing targeted.
+frame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+frame:RegisterEvent("PLAYER_TARGET_CHANGED")
+frame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
+frame:SetScript("OnEvent", function(_, event, ...)
     if event == "VIGNETTES_UPDATED" then
         Scanner.OnVignettesUpdated()
+    elseif event == "CHAT_MSG_MONSTER_SAY" or event == "CHAT_MSG_MONSTER_YELL" then
+        local text, npcName = ...
+        Scanner.OnAnnouncement(text, npcName, select(12, ...))
+    elseif event == "NAME_PLATE_UNIT_ADDED" then
+        noteShardFromUnit(...)
+    elseif event == "PLAYER_TARGET_CHANGED" then
+        noteShardFromUnit("target")
+    elseif event == "UPDATE_MOUSEOVER_UNIT" then
+        noteShardFromUnit("mouseover")
     else
         Scanner.Reset()
     end
