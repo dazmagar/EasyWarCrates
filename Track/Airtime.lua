@@ -192,9 +192,11 @@ end
 -- instead, "guess" when there is nothing. n counts what the figure rests on,
 -- not how many readings exist, because a figure resting on three agreeing
 -- readings out of eleven is worth three.
-function Airtime.Descent(store, zoneID)
+-- The shared estimator. Both legs are a pile of readings with one-sided
+-- contamination at each end, so they are summarised the same way.
+local function describe(store, zoneID, guess)
     local full, over, part = fullReadings(store, zoneID)
-    if #full == 0 then return DESCENT_GUESS, 0, nil, nil, over, part, "guess" end
+    if #full == 0 then return guess, 0, nil, nil, over, part, "guess" end
 
     local from, to, n = densest(full)
     if from then
@@ -221,13 +223,56 @@ function Airtime.Descent(store, zoneID)
     if pf then
         return median(pooled, pf, pt), pn, full[1], full[#full], over, part, "pooled"
     end
-    return DESCENT_GUESS, 0, full[1], full[#full], over, part, "guess"
+    return guess, 0, full[1], full[#full], over, part, "guess"
+end
+
+function Airtime.Descent(store, zoneID)
+    return describe(store, zoneID, DESCENT_GUESS)
 end
 
 -- The individual readings, for inspection.
 function Airtime.DescentSamples(store, zoneID)
     local list = store and store[zoneID]
     return (type(list) == "table" and not list.n) and list or nil
+end
+
+-- The first leg, measured rather than computed.
+--
+-- From the spawn to the moment the parachute opens. The addon has always
+-- computed this from the fitted speed and the distance left to run, and it is
+-- wrong by +16 to +64 seconds depending on the zone, because the transport
+-- slows on approach and circles before letting go. An average speed cannot
+-- know that; a stopwatch does not have to.
+--
+-- Only measurable from an anchor that really is the spawn. A yell is: the NPC
+-- announces the cycle starting. Catching the transport in the air is not -- it
+-- says when the transport came into range, which is a lower bound by however
+-- long it had already been flying. Those are kept and flagged, the way a
+-- parachute joined mid-fall is, and left out of the figure.
+local FLIGHT_MIN, FLIGHT_MAX = 10, 400
+Airtime.FLIGHT_MIN, Airtime.FLIGHT_MAX = FLIGHT_MIN, FLIGHT_MAX
+
+-- Until a zone has been measured. Between the shortest and longest seen live.
+local FLIGHT_GUESS = 90
+Airtime.FLIGHT_GUESS = FLIGHT_GUESS
+
+function Airtime.NoteFlight(store, zoneID, seconds, partial)
+    if type(store) ~= "table" or not zoneID then return nil end
+    seconds = tonumber(seconds)
+    if not seconds or seconds < FLIGHT_MIN or seconds > FLIGHT_MAX then return nil end
+    local list = store[zoneID]
+    if type(list) ~= "table" then list = {}; store[zoneID] = list end
+    list[#list + 1] = { secs = seconds, partial = partial or nil }
+    while #list > 40 do table.remove(list, 1) end
+    return list[#list]
+end
+
+-- Same shape and same estimator as the descent: the densest run of readings
+-- that agree, falling back to every zone pooled when a zone contradicts
+-- itself. Returns typical, n, min, max, unused, partialCount, source.
+function Airtime.Flight(store, zoneID)
+    local typical, n, lo, hi, over, part, source = describe(store, zoneID, FLIGHT_GUESS)
+    return typical, n, lo, hi, over, part, source
 end
 
 -- How wrong the raw release estimate runs, pooled across zones.

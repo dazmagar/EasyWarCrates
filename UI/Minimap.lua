@@ -72,17 +72,16 @@ local function build()
         local now = GetServerTime()
         local list, nextRow = ns.Model.BuildRows(ns.db.crates, ns.db.route, now)
         if nextRow then
-            GameTooltip:AddLine(("next: %s in %s"):format(
+            GameTooltip:AddLine(("next: %s, transport in %s"):format(
                 nextRow.abbr, ns.FormatClock(nextRow.remaining):gsub("^%s+", "")), 1, 1, 1)
-            if nextRow.leaveIn then
-                GameTooltip:AddLine(nextRow.leaveIn <= 0 and "leave now"
-                    or ("leave in %s"):format(ns.FormatClock(nextRow.leaveIn):gsub("^%s+", "")),
-                    1, 0.82, 0)
+            if nextRow.onGround then
+                GameTooltip:AddLine(("lootable in %s"):format(
+                    ns.FormatClock(nextRow.onGround):gsub("^%s+", "")), 1, 0.82, 0)
             end
         elseif #list == 0 then
             GameTooltip:AddLine("no timers yet", 0.6, 0.6, 0.6)
         else
-            GameTooltip:AddLine("nothing on the route is reachable", 1, 0.4, 0.4)
+            GameTooltip:AddLine("nothing on the route is timed yet", 1, 0.4, 0.4)
         end
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Left-click: show or hide the window", 0.6, 0.6, 0.6)

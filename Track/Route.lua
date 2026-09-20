@@ -21,18 +21,6 @@ local ADDON, ns = ...
 local Route = {}
 ns.Route = Route
 
--- Used when a zone has no measured capital-to-zone time yet. Deliberately a
--- single number and deliberately rough: it is a placeholder to be replaced by
--- measurement, not a figure anyone should trust.
-local DEFAULT_TRAVEL = 60
-Route.DEFAULT_TRAVEL = DEFAULT_TRAVEL
-
--- Leaving this late still counts as catchable. A crate sits on the ground a
--- while before anyone opens it, and arriving a few seconds after it lands is
--- normal farming, not a miss.
-local GRACE = 20
-Route.GRACE = GRACE
-
 -- The timer to show for a zone when several shards are on record. The raid is
 -- on one shard and re-rolls it every time it ports out and flies back, so no
 -- stored shard is knowably the right one. The freshest is the best guess
@@ -47,44 +35,59 @@ function Route.FreshestForZone(db, zoneID)
     return best, bestShard
 end
 
+-- The entry that applies where you are, rather than merely the newest one.
+--
+-- Knowing the shard changes the question. A timer belongs to one copy of a
+-- zone, so once the copy is known the only entry worth reading is that copy's,
+-- and its absence is an answer: nothing has been timed in this copy yet.
+-- Showing another shard's countdown there is worse than showing nothing,
+-- because it looks exactly like knowledge.
+--
+-- Returns entry, shard, known. known is false when the shard is unknown and
+-- the freshest entry was taken as a guess.
+function Route.EntryFor(db, zoneID, shardID)
+    if shardID ~= nil then
+        local shards = db and db[zoneID]
+        return shards and shards[shardID] or nil, shardID, true
+    end
+    local entry, shard = Route.FreshestForZone(db, zoneID)
+    return entry, shard, false
+end
+
 -- Builds the plan for a route.
 --
 --   zones        ordered list of zone ids, as the raid agreed them
 --   intervalOf   f(zoneID) -> seconds between drops
---   travelOf     f(zoneID) -> seconds from the capital to that zone
+--   shardOf      f(zoneID) -> which copy of the zone applies, or nil
 --   now          server time
 --
 -- Returns a list ordered by drop time, each entry carrying:
---   dropIn    seconds until the crate drops there
---   leaveIn   seconds until you have to set off; negative means you are late
---   status    "go"      leave now, or you are inside the grace period
---             "wait"    there is time in hand
---             "missed"  cannot be reached even leaving this instant
---             "unknown" nothing has ever been timed in that zone
-function Route.Plan(db, zones, intervalOf, travelOf, now)
+--   dropIn    seconds until the transport appears there
+--   status    "wait"     there is a timer for it
+--             "unknown"  nothing has ever been timed in that zone
+--
+-- It used to answer when to set off, from a table of capital-to-zone flight
+-- times. That was advice rather than observation -- the estimates were coarse
+-- by their own admission, and which drop point a crate picks moves the number
+-- as much as which zone does. The window says when the transport appears and
+-- when the crate is lootable, both measured, and leaves the flying to the
+-- player.
+function Route.Plan(db, zones, intervalOf, shardOf, now)
     local out = {}
     for i = 1, #(zones or {}) do
         local zoneID = zones[i]
-        local entry, shardID = Route.FreshestForZone(db, zoneID)
-        local travel = travelOf(zoneID) or DEFAULT_TRAVEL
+        local entry, shardID, known = Route.EntryFor(db, zoneID,
+            shardOf and shardOf(zoneID) or nil)
 
-        local row = { zoneID = zoneID, shardID = shardID, entry = entry, travel = travel, order = i }
+        local row = { zoneID = zoneID, shardID = shardID, entry = entry,
+                      knownShard = known, order = i }
         if not entry then
             row.status = "unknown"
         else
             local dropIn = ns.Timers.Remaining(entry, intervalOf(zoneID), now)
             row.dropIn = dropIn
             row.missed = ns.Timers.MissedCycles(entry, intervalOf(zoneID), now)
-            row.leaveIn = dropIn and (dropIn - travel) or nil
-            if not dropIn then
-                row.status = "unknown"
-            elseif row.leaveIn >= 0 then
-                row.status = "wait"
-            elseif row.leaveIn >= -GRACE then
-                row.status = "go"
-            else
-                row.status = "missed"
-            end
+            row.status = dropIn and "wait" or "unknown"
         end
         out[#out + 1] = row
     end
@@ -103,12 +106,10 @@ function Route.Plan(db, zones, intervalOf, travelOf, now)
     return out
 end
 
--- The one row worth acting on: the soonest drop still reachable. nil when the
--- whole route is out of reach or untimed.
+-- The one row worth acting on: the soonest drop anybody has a timer for.
 function Route.Next(plan)
     for i = 1, #(plan or {}) do
-        local row = plan[i]
-        if row.status == "go" or row.status == "wait" then return row end
+        if plan[i].status == "wait" then return plan[i] end
     end
     return nil
 end
