@@ -1,0 +1,19 @@
+package-as: EasyWarCrates
+
+# What the packager must leave out of the published addon. Everything here is
+# how the addon is built and reasoned about, not part of what the game loads:
+# tools/ deploys to one particular machine, tests/ and research/ never ship,
+# and tmp/ holds working notes.
+#
+# tools/deploy.py enforces the same thing from the other end -- it copies the
+# .toc and exactly the files it lists -- so the deployed folder and the
+# published zip agree by construction rather than by two lists being kept in
+# step by hand.
+ignore:
+    - tools
+    - tests
+    - research
+    - tmp
+    - .venv
+    - .gitattributes
+    - .pkgmeta
