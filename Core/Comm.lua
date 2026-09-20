@@ -1,0 +1,258 @@
+local ADDON, ns = ...
+
+-- Talking to other players, and listening to addons that are not this one.
+--
+-- Thin on purpose: Track/Remote.lua decodes and decides, this registers
+-- prefixes, guards what comes in and hands it over.
+--
+-- Nothing is ever sent on another addon's prefix. Their traffic is read where
+-- it is already being broadcast to everyone in the channel, and their clients
+-- never hear anything from us that they did not expect.
+
+local Comm = {}
+ns.Comm = Comm
+
+local OURS = "EWC1"
+Comm.OURS = OURS
+
+-- Everything worth registering. Decodable ones turn into sightings; the rest
+-- are here so /ewc comm can show that an addon is alive in this group at all,
+-- which is the difference between "nobody is broadcasting" and "we cannot read
+-- what they broadcast".
+local PREFIXES = {
+    OURS,
+    "WarCrateTracker",  -- plain text, decoded
+    "HGLOG1",           -- RCT's log companion, plain text, not decoded yet
+    "RCT", "RCTUPD",    -- RCT proper: serialised, deflated, not readable here
+    "WCP1",             -- WarCratePredict
+    "CTKZK_SYNC", "CTKZK_PSYNC",
+}
+Comm.PREFIXES = PREFIXES
+
+-- CHAT_MSG_ADDON is a client-wide event, not a per-addon one: registering a
+-- prefix turns on delivery for the whole client, so this handler is also
+-- handed every prefix any other addon registered. Without this set the log
+-- fills with Details! and whatever else is installed, and the one line that
+-- matters is buried.
+local WANTED = {}
+for _, prefix in ipairs(PREFIXES) do WANTED[prefix] = true end
+
+-- Our own protocol stays inside the group. Another addon's traffic is taken
+-- from the guild too, because that is where WarCrateTracker and HGLog
+-- broadcast and refusing it would throw away most of what there is to hear.
+local OUR_CHANNELS = { PARTY = true, RAID = true, INSTANCE_CHAT = true }
+local THEIR_CHANNELS = { PARTY = true, RAID = true, INSTANCE_CHAT = true, GUILD = true }
+
+-- A whisper is never a legitimate transport for any of this. Without that
+-- rule anyone on the realm can hand you a crafted message and move a timer,
+-- needing no group, no guild and no acquaintance.
+local RX_PER_WINDOW, RX_WINDOW = 20, 5
+local rxRate = {}
+
+local SEND_COOLDOWN = 20
+local lastSent = {}
+
+-- What has been heard lately, for /ewc comm. Includes traffic we cannot read.
+local HEARD_MAX = 20
+local heard = {}
+Comm.heard = heard
+
+local zoneByName
+
+local function nameOnly(sender)
+    return (tostring(sender or "")):match("^([^-]+)") or sender
+end
+
+local function inGroupNow(sender)
+    local ok, yes = pcall(function()
+        return UnitInRaid(sender) or UnitInParty(sender)
+            or UnitInRaid(nameOnly(sender)) or UnitInParty(nameOnly(sender))
+    end)
+    return ok and yes and true or false
+end
+
+local function isSelf(sender)
+    local me = UnitName("player")
+    return me ~= nil and nameOnly(sender) == me
+end
+
+local function rateOK(sender)
+    local now, r = GetTime(), rxRate[sender]
+    if not r or (now - r.at) > RX_WINDOW then
+        rxRate[sender] = { n = 1, at = now }
+        return true
+    end
+    r.n = r.n + 1
+    return r.n <= RX_PER_WINDOW
+end
+
+local function log(entry)
+    entry.at = GetServerTime()
+    table.insert(heard, 1, entry)
+    while #heard > HEARD_MAX do table.remove(heard) end
+end
+
+-- The six zones by the name this client calls them, so a name in a chat alert
+-- resolves. Built from the game rather than from Data/Zones.lua, whose names
+-- are English: a Russian client has to match a Russian name.
+local function zoneNames()
+    if zoneByName then return zoneByName end
+    zoneByName = {}
+    for zoneID in pairs(ns.ZONES) do
+        local info = C_Map.GetMapInfo(zoneID)
+        if info and info.name then zoneByName[info.name] = zoneID end
+        -- The shipped English name too, for a raid on mixed locales.
+        zoneByName[ns.GetZoneName(zoneID)] = zoneID
+    end
+    return zoneByName
+end
+
+local function take(report, channel)
+    local verdict = ns.Remote.Note(ns.remote, report, GetServerTime())
+    log({ via = report.via, from = report.from, channel = channel,
+          text = ("%s in %s shard %s"):format(report.stage,
+              ns.GetZoneAbbr(report.zoneID), tostring(report.shardID)),
+          verdict = verdict })
+    if verdict == "new" or verdict == "refresh" then
+        if ns.RefreshWindow then ns.RefreshWindow() end
+    end
+    return verdict
+end
+
+function Comm.OnAddonMessage(prefix, text, channel, sender)
+    if not WANTED[prefix] then return end
+    if not ns.db or not ns.db.enabled then return end
+    local allowed = (prefix == OURS) and OUR_CHANNELS or THEIR_CHANNELS
+    if not allowed[channel] then return end
+    if isSelf(sender) then return end
+    if channel ~= "GUILD" and not inGroupNow(sender) then return end
+    if not rateOK(sender) then return end
+
+    local report = ns.Remote.Decode(prefix, text, sender)
+    if report then return take(report, channel) end
+
+    -- HGLog shares a batch of anchors rather than one sighting, so it has its
+    -- own way in. Logged as one line: a chunk can carry dozens of rows and a
+    -- line each would push everything else out of the log.
+    local anchors = ns.Remote.DecodeAnchors(prefix, text, sender)
+    if #anchors > 0 then
+        local taken = 0
+        for _, anchor in ipairs(anchors) do
+            local verdict = ns.Remote.Note(ns.remote, anchor, GetServerTime())
+            if verdict == "new" or verdict == "refresh" then taken = taken + 1 end
+        end
+        return log({ via = "HGLog", from = sender, channel = channel,
+                     text = ("%d anchor%s"):format(#anchors, #anchors == 1 and "" or "s"),
+                     verdict = ("%d recent enough to keep"):format(taken) })
+    end
+
+    -- Unreadable, and that is the normal case for most of these prefixes.
+    -- Logged without its payload: it is compressed binary and printing it
+    -- would fill the log with nothing.
+    log({ via = prefix, from = sender, channel = channel,
+          text = ("%d bytes, not decoded"):format(#tostring(text)), verdict = "heard" })
+end
+
+function Comm.OnChat(text, sender, channel)
+    if not ns.db or not ns.db.enabled then return end
+    if isSelf(sender) then return end
+    if not rateOK(sender) then return end
+
+    local report, unresolved = ns.Remote.FromAlert(text, sender, zoneNames(), GetServerTime())
+    if report then return take(report, channel) end
+    if unresolved then
+        log({ via = "RCT", from = sender, channel = channel, verdict = "unknown zone",
+              text = ("said a crate is flying in %q, which is not a zone this client knows")
+                  :format(unresolved) })
+    end
+end
+
+-- Tell the group what this client just saw. Never a prediction on its own: a
+-- guess travelling as news is how one wrong call becomes everyone's.
+function Comm.Report(zoneID, shardID, stage, pos)
+    if not ns.db or not ns.db.enabled or not ns.db.share then return end
+    if not ns.Remote.RANK[stage] then return end
+    if not IsInGroup() then return end
+
+    local key = ("%s:%s:%s"):format(zoneID, tostring(shardID), stage)
+    local now = GetTime()
+    if (now - (lastSent[key] or -math.huge)) < SEND_COOLDOWN then return end
+    lastSent[key] = now
+
+    local payload = ns.Remote.Encode({
+        stage = stage, zoneID = zoneID, shardID = shardID, at = GetServerTime(),
+        x = pos and pos.x or nil, y = pos and pos.y or nil,
+    })
+    local channel = IsInRaid() and "RAID" or "PARTY"
+    pcall(C_ChatInfo.SendAddonMessage, OURS, payload, channel)
+end
+
+-- Put the call in raid chat, with a pin the raid can click.
+--
+-- Leader and assistant only, and that is the whole reason role is read at all.
+-- Setting a pin is private -- one waypoint per client, nobody else's ever
+-- reaches you -- so every client should set its own and none of that needs
+-- permission. Sending is the opposite: five members running this would post
+-- the same link five times, which is how RCT's announce came to be gated the
+-- same way.
+--
+-- The link has to come from this client's own waypoint, so announcing moves
+-- your pin. That is not a side effect to work around; the pin and the link are
+-- one object.
+local ANNOUNCE_COOLDOWN = 240
+local lastAnnounced = {}
+
+function Comm.Announce(zoneID, x, y)
+    if not ns.db or not ns.db.announce then return "off" end
+    local role = Comm.Role()
+    if role ~= "leader" and role ~= "assist" then return "not-privileged" end
+
+    local now = GetServerTime()
+    if (now - (lastAnnounced[zoneID] or -math.huge)) < ANNOUNCE_COOLDOWN then
+        return "too-soon"
+    end
+
+    local ok, link = ns.SetCratePin(zoneID, x, y)
+    if not ok then return "no-pin" end
+    lastAnnounced[zoneID] = now
+
+    local text = ("War crate incoming: %s %.1f, %.1f%s"):format(
+        ns.GetZoneName(zoneID), x * 100, y * 100, link and (" " .. link) or "")
+    pcall(SendChatMessage, text, IsInRaid() and "RAID_WARNING" or "PARTY")
+    return "sent"
+end
+
+function Comm.Role()
+    if not IsInGroup() then return "solo" end
+    if UnitIsGroupLeader("player") then return "leader" end
+    if UnitIsGroupAssistant("player") then return "assist" end
+    return "member"
+end
+
+local frame = CreateFrame("Frame")
+frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("CHAT_MSG_ADDON")
+frame:RegisterEvent("GROUP_ROSTER_UPDATE")
+for _, event in ipairs({ "CHAT_MSG_RAID_WARNING", "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER",
+                         "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER" }) do
+    frame:RegisterEvent(event)
+end
+frame:SetScript("OnEvent", function(_, event, ...)
+    if event == "PLAYER_LOGIN" then
+        for _, prefix in ipairs(PREFIXES) do
+            pcall(C_ChatInfo.RegisterAddonMessagePrefix, prefix)
+        end
+    elseif event == "CHAT_MSG_ADDON" then
+        local prefix, text, channel, sender = ...
+        Comm.OnAddonMessage(prefix, text, channel, sender)
+    elseif event == "GROUP_ROSTER_UPDATE" then
+        -- Out of the group, out of the reports. They were never yours and the
+        -- shards they name are not ones you will be on again.
+        if not IsInGroup() then ns.Remote.Clear(ns.remote) end
+    else
+        local text, sender = ...
+        Comm.OnChat(text, sender, event:gsub("^CHAT_MSG_", ""))
+    end
+end)
+
+Comm.frame = frame

@@ -43,6 +43,21 @@ function Model.LiveFor(zoneID, now)
                 ns.db and ns.db.release)
         return { phase = "inbound", toGround = eta and eta.toGround or nil, rank = 3 }
     end
+
+    -- Nothing visible from here, but somebody else may be standing in it. A
+    -- report ranks exactly as the same sighting of our own would, so a
+    -- parachute a scout can see outranks a transport this client can.
+    local report = ns.Remote and ns.Remote.For(ns.remote, zoneID, now)
+    if report then
+        local phase = report.stage == "flying" and "inbound" or report.stage
+        local eta = report.stage == "falling"
+            and ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, nil, nil, report.at, now)
+        return {
+            phase = phase, rank = ns.Remote.RANK[report.stage] or 99,
+            since = report.at, toGround = eta and eta.toGround or nil,
+            from = report.from, via = report.via,
+        }
+    end
     return nil
 end
 
