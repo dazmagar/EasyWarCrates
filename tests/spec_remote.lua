@@ -383,3 +383,119 @@ t.test("a report from a player who has long since moved on is not used", functio
     Remote.Note(store, report({ stage = "here" }), T0)
     t.eq(Remote.ShardFor(store, HA, T0 + 1000), nil)
 end)
+
+-- RCT's own prefix. Their payload is AceSerializer over LibDeflate over
+-- EncodeForPrint, read off their Sync/wire.lua. The unpacking is injected here
+-- so the parsing is tested without either library being present.
+local function inflated(tbl)
+    return function() return tbl end
+end
+
+t.test("an RCT crate spot becomes a report", function()
+    local r = Remote.DecodeRCT("SPOT~abc123~sig", "Relay", inflated({
+        type = "SPOT", captureState = "Flying", ts = T0,
+        zoneID = 2413, shardhist = "4821", spotter = "Someone",
+    }))
+    t.eq(r.stage, "flying")
+    t.eq(r.zoneID, HA)
+    t.eq(r.shardID, 4821, "their shard arrives as text and ours is a number")
+    t.eq(r.at, T0)
+    t.eq(r.from, "Someone", "the spotter, not whoever relayed it")
+    t.eq(r.via, "RCT")
+end)
+
+t.test("their capture states map onto ours", function()
+    local function stageOf(state)
+        return Remote.DecodeRCT("SPOT~x~s", "Relay", inflated({
+            captureState = state, ts = T0, zoneID = 2413, shardhist = "1" })).stage
+    end
+    t.eq(stageOf("Falling To Ground"), "falling")
+    t.eq(stageOf("On Ground"), "ground")
+    t.eq(stageOf("Claimed"), "claimed")
+    t.eq(stageOf("Monster Say"), "flying", "their announcer catch is a crate in the air")
+    t.eq(stageOf("Unknown"), "anchor", "a timer of unstated quality, and ranked as one")
+end)
+
+t.test("a spot with no spotter is credited to whoever sent it", function()
+    local r = Remote.DecodeRCT("SPOT~x~s", "Relay", inflated({
+        captureState = "Flying", ts = T0, zoneID = 2413, shardhist = "7" }))
+    t.eq(r.from, "Relay")
+end)
+
+t.test("their handshakes and control messages are not crates", function()
+    local _, why = Remote.DecodeRCT("TOKEN~deadbeef", "Relay", inflated({}))
+    t.eq(why, "handshake")
+    -- Nine bytes, no payload, and it arrived seventeen times in ten seconds.
+    local _, why2 = Remote.DecodeRCT("TOKEN_REQ", "Relay", inflated({}))
+    t.eq(why2, "handshake", "control traffic, even with nothing after the tag")
+    local _, why3 = Remote.DecodeRCT("TOKEN_ACK~beef", "Relay", inflated({}))
+    t.eq(why3, "handshake")
+end)
+
+-- AceComm's framing. RCT's bulk sync arrives in three or four pieces, so
+-- refusing split messages threw away most of what there was to read.
+t.test("an unsplit message passes straight through", function()
+    local st = {}
+    t.eq(Remote.Reassemble(st, "SPOT~x~s", "Relay", T0), "SPOT~x~s")
+    t.eq(next(st), nil, "and nothing is held on to")
+end)
+
+t.test("an escaped message loses only its escape byte", function()
+    t.eq(Remote.Reassemble({}, "odd", "Relay", T0), "odd")
+end)
+
+t.test("a split message is put back together in order", function()
+    local st = {}
+    t.eq(Remote.Reassemble(st, "one-", "Relay", T0), nil)
+    t.eq(Remote.Reassemble(st, "two-", "Relay", T0), nil)
+    t.eq(Remote.Reassemble(st, "three", "Relay", T0), "one-two-three")
+    t.eq(next(st), nil, "and the run is let go once it completes")
+end)
+
+t.test("two senders splitting at once do not braid together", function()
+    local st = {}
+    Remote.Reassemble(st, "A1", "Alice", T0)
+    Remote.Reassemble(st, "B1", "Bob", T0)
+    Remote.Reassemble(st, "B2", "Bob", T0)
+    t.eq(Remote.Reassemble(st, "A2", "Alice", T0), "A1A2")
+end)
+
+t.test("joining in the middle of somebody's sync is not an error", function()
+    local _, why = Remote.Reassemble({}, "orphan", "Relay", T0)
+    t.eq(why, "orphan")
+end)
+
+t.test("a run that stalls is abandoned rather than kept forever", function()
+    local st = {}
+    Remote.Reassemble(st, "start", "Relay", T0)
+    local _, why = Remote.Reassemble(st, "end", "Relay", T0 + 120)
+    t.eq(why, "orphan", "the beginning was too long ago to belong to this")
+end)
+
+t.test("an endless run is dropped instead of growing without bound", function()
+    local st = {}
+    Remote.Reassemble(st, "x", "Relay", T0)
+    -- The first answer that is not "keep going" is the one that matters;
+    -- pieces after the run is dropped are orphans, which is correct and not
+    -- what this is about.
+    local why
+    for _ = 1, 20 do
+        local _unused, reason = Remote.Reassemble(st, "x", "Relay", T0)
+        if reason ~= "partial" then why = why or reason end
+    end
+    t.eq(why, "too long")
+    t.eq(next(st), nil)
+end)
+
+t.test("with no library to unpack it, the message is refused and says why", function()
+    local _, why = Remote.DecodeRCT("SPOT~x~s", "Relay", function() return nil end)
+    t.eq(why, "no-library")
+end)
+
+t.test("a decoded RCT spot goes through the same gate as any other", function()
+    local store = Remote.New()
+    local r = Remote.DecodeRCT("SPOT~x~s", "Relay", inflated({
+        captureState = "Flying", ts = T0, zoneID = 2413, shardhist = "4821" }))
+    t.eq(Remote.Note(store, r, T0), "new")
+    t.eq(Remote.Note(store, r, T0 + 9999), "stale")
+end)

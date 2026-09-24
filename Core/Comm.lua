@@ -23,7 +23,7 @@ local PREFIXES = {
     OURS,
     "WarCrateTracker",  -- plain text, decoded
     "HGLOG1",           -- RCT's log companion, plain text, not decoded yet
-    "RCT", "RCTUPD",    -- RCT proper: serialised, deflated, not readable here
+    "RCT", "RCTUPD",    -- serialised and deflated; unpacked with borrowed libraries
     "WCP1",             -- WarCratePredict
     "CTKZK_SYNC", "CTKZK_PSYNC",
 }
@@ -56,6 +56,7 @@ local lastSent = {}
 local HEARD_MAX = 20
 local heard = {}
 Comm.heard = heard
+Comm.handshakes = 0
 
 local zoneByName
 
@@ -116,8 +117,28 @@ local function take(report, channel)
     if verdict == "new" or verdict == "refresh" then
         if ns.RefreshWindow then ns.RefreshWindow() end
     end
+
+    -- Said out loud the first time, and only for a crate somebody can act on.
+    -- Until now every one of these went to a ring buffer in memory that never
+    -- reached disk, so after the fact there was no way to tell "nobody is
+    -- broadcasting" from "we heard them and did nothing". A refresh of the
+    -- same crate stays quiet; so does a player merely reporting where they
+    -- stand, which is bookkeeping rather than news.
+    if verdict == "new" and ns.Remote.RANK[report.stage] then
+        ns.Print(("|cff33ddaa%s|r says a crate is %s in |cffffd100%s|r"
+            .. " |cff777777(shard %s, heard through %s)|r"):format(
+            tostring(report.from), report.stage, ns.GetZoneName(report.zoneID),
+            tostring(report.shardID), tostring(report.via)))
+    elseif verdict == "new" then
+        ns.Debug(("%s is in %s shard %s"):format(tostring(report.from),
+            ns.GetZoneAbbr(report.zoneID), tostring(report.shardID)))
+    end
     return verdict
 end
+
+-- Half-received messages, by sender. AceComm splits anything over a packet,
+-- and RCT's bulk sync is three or four pieces.
+local partial = {}
 
 function Comm.OnAddonMessage(prefix, text, channel, sender)
     if not WANTED[prefix] then return end
@@ -127,6 +148,18 @@ function Comm.OnAddonMessage(prefix, text, channel, sender)
     if isSelf(sender) then return end
     if channel ~= "GUILD" and not inGroupNow(sender) then return end
     if not rateOK(sender) then return end
+
+    -- Put a split message back together before anything is asked to read it.
+    -- A piece on its own is not a refusal, it is a wait.
+    local whole, framing = ns.Remote.Reassemble(partial, text, sender, GetServerTime())
+    if not whole then
+        if framing ~= "partial" then
+            log({ via = prefix, from = sender, channel = channel,
+                  text = ("%d bytes"):format(#tostring(text)), verdict = framing })
+        end
+        return
+    end
+    text = whole
 
     local report = ns.Remote.Decode(prefix, text, sender)
     if report then return take(report, channel) end
@@ -146,9 +179,30 @@ function Comm.OnAddonMessage(prefix, text, channel, sender)
                      verdict = ("%d recent enough to keep"):format(taken) })
     end
 
-    -- Unreadable, and that is the normal case for most of these prefixes.
-    -- Logged without its payload: it is compressed binary and printing it
-    -- would fill the log with nothing.
+    -- RCT's own prefix, unpacked with libraries borrowed from whatever else
+    -- is installed rather than bundled. The reason it failed is logged,
+    -- because "nobody has LibDeflate" and "that was a token handshake" are
+    -- different answers and both used to read as "not decoded".
+    if prefix == "RCT" then
+        local spot, why = ns.Remote.DecodeRCT(text, sender)
+        if spot then return take(spot, channel) end
+        -- Counted rather than logged. One client sent seventeen token
+        -- requests in ten seconds, which would have pushed every real
+        -- sighting out of a twenty-line log before anybody could read it. The
+        -- count still proves the channel is alive, which is all a handshake
+        -- was ever evidence of.
+        if why == "handshake" then
+            Comm.handshakes = (Comm.handshakes or 0) + 1
+            return
+        end
+        return log({ via = "RCT", from = sender, channel = channel,
+                     text = ("%d bytes"):format(#tostring(text)),
+                     verdict = why or "not decoded" })
+    end
+
+    -- Unreadable, and that is the normal case for the rest. Logged without its
+    -- payload: it is compressed binary and printing it would fill the log with
+    -- nothing.
     log({ via = prefix, from = sender, channel = channel,
           text = ("%d bytes, not decoded"):format(#tostring(text)), verdict = "heard" })
 end
@@ -252,6 +306,47 @@ function Comm.ReportHere()
         stage = "here", zoneID = zoneID, shardID = shard, at = GetServerTime(),
     }), IsInRaid() and "RAID" or "PARTY")
     return "sent"
+end
+
+-- Say a row out loud, because somebody clicked it.
+--
+-- Gated far more loosely than the automatic announce, and on purpose. That one
+-- fires by itself on every client running this addon, so five of them would
+-- say the same thing five times and it is held to the leader. This is one
+-- person choosing, once, so a raid warning is fair where the game allows one
+-- and plain raid chat where it does not. RCT reached the same conclusion about
+-- its own click-to-announce.
+--
+-- The pin has to come from this client's own waypoint, which moving is the
+-- price of a link the chat will keep clickable. SetCratePin says so on screen.
+local CLICK_COOLDOWN = 15
+local lastClick = {}
+
+function Comm.AnnounceRow(row)
+    if type(row) ~= "table" then return "nothing" end
+    local text = ns.Model.Announcement(row)
+    if not text then return "nothing" end
+    if not IsInGroup() then return "alone" end
+
+    local now = GetTime()
+    if (now - (lastClick[row.zoneID] or -math.huge)) < CLICK_COOLDOWN then
+        return "too-soon"
+    end
+    lastClick[row.zoneID] = now
+
+    local live = row.live
+    if live and live.x and live.y then
+        local ok, link = ns.SetCratePin(row.zoneID, live.x, live.y)
+        if ok and link then text = text .. " " .. link end
+    end
+
+    local channel = "PARTY"
+    if IsInRaid() then
+        local role = Comm.Role()
+        channel = (role == "leader" or role == "assist") and "RAID_WARNING" or "RAID"
+    end
+    pcall(SendChatMessage, text, channel)
+    return "sent", channel
 end
 
 function Comm.Role()

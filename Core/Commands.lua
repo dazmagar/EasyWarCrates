@@ -280,8 +280,31 @@ end
 HANDLERS.comm = function()
     ns.Print(("you are %s; sharing is %s"):format(
         ns.Comm.Role(), ns.db.share and "|cff33ff99on|r" or "|cffff8800off|r"))
-    ns.Print(("listening on: %s"):format(table.concat(ns.Comm.PREFIXES, ", ")))
-    ns.Print(("reports held: %d"):format(ns.Remote.Count(ns.remote, GetServerTime())))
+    -- Registration, checked rather than assumed. A client can hold only so
+    -- many prefixes across every addon installed, so asking for one is not the
+    -- same as having it, and a refusal is silent. Without this, "nobody is
+    -- broadcasting" and "we never subscribed" look identical.
+    local ok, missing = {}, {}
+    for _, prefix in ipairs(ns.Comm.PREFIXES) do
+        local registered = true
+        if C_ChatInfo.IsAddonMessagePrefixRegistered then
+            local got, yes = pcall(C_ChatInfo.IsAddonMessagePrefixRegistered, prefix)
+            registered = got and yes and true or false
+        end
+        table.insert(registered and ok or missing, prefix)
+    end
+    ns.Print(("subscribed to %d of %d: |cff33ff99%s|r"):format(
+        #ok, #ns.Comm.PREFIXES, table.concat(ok, ", ")))
+    if #missing > 0 then
+        ns.Print(("|cffff5555not subscribed: %s|r |cff777777-- the client caps how many"
+            .. " prefixes all addons may hold between them|r"):format(
+            table.concat(missing, ", ")))
+    end
+    ns.Print(("reports held: %d%s"):format(ns.Remote.Count(ns.remote, GetServerTime()),
+        (ns.Comm.handshakes or 0) > 0
+            and ("  |cff777777(%d token handshakes ignored -- somebody's RCT is talking)|r")
+                :format(ns.Comm.handshakes)
+            or ""))
 
     local heard = ns.Comm.heard
     if #heard == 0 then

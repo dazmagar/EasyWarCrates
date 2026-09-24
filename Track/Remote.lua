@@ -354,3 +354,130 @@ function Remote.ShardFor(store, zoneID, now)
     if not best then return nil end
     return bestShard, best.from, now - best.at
 end
+
+-- RCT's own prefix, decoded without bundling anything.
+--
+-- The payload is AceSerializer, then LibDeflate, then EncodeForPrint. That is
+-- their Sync/wire.lua, read from the copy on disk. Nothing is encrypted, and
+-- the signature beside it is theirs to check rather than ours to satisfy:
+-- reading a broadcast is not the same as claiming to be one of them.
+--
+-- The two libraries are not bundled and will not be -- between them they are
+-- most of the weight this addon exists without. They are borrowed. LibStub
+-- hands out whatever any installed addon has already loaded, and both are
+-- everywhere: Details, BugSack and several others carry them. With neither
+-- present the message stays undecoded and says so, exactly as before.
+local RCT_STAGE = {
+    ["Flying"]            = "flying",
+    ["Monster Say"]       = "flying",
+    ["Falling To Ground"] = "falling",
+    ["On Ground"]         = "ground",
+    ["Claimed"]           = "claimed",
+}
+
+local function borrowedInflate(encoded)
+    if not LibStub then return nil end
+    local okD, deflate = pcall(LibStub, "LibDeflate", true)
+    local okS, serializer = pcall(LibStub, "AceSerializer-3.0", true)
+    if not (okD and okS and deflate and serializer) then return nil end
+
+    local ok, data = pcall(function()
+        local blob = deflate:DecodeForPrint(encoded)
+        if not blob then return nil end
+        local raw = deflate:DecompressDeflate(blob)
+        if not raw then return nil end
+        local good, tbl = serializer:Deserialize(raw)
+        return good and tbl or nil
+    end)
+    return ok and data or nil
+end
+
+-- Returns a report, or nil plus why it could not be read. inflate is injected
+-- so tests can drive the parsing without either library present.
+function Remote.DecodeRCT(text, sender, inflate)
+    if type(text) ~= "string" or type(sender) ~= "string" or sender == "" then return nil end
+
+    -- The AceComm framing is already off by here; Core/Comm.lua reassembles
+    -- a split message before anything is asked to read it.
+    -- Their token traffic, which is control rather than content. TOKEN_REQ
+    -- carries no payload at all, so it has to be recognised before a payload
+    -- is required of it: nine bytes of it arrived seventeen times in ten
+    -- seconds and were filed as "not theirs".
+    if text:find("^TOKEN") then return nil, "handshake" end
+
+    local tag, encoded = text:match("^([A-Z_]+)~([^~]+)")
+    if not tag or not encoded then return nil, "not-theirs" end
+
+    local data = (inflate or borrowedInflate)(encoded)
+    if type(data) ~= "table" then return nil, "no-library" end
+
+    -- Their shard is "N/A" whenever they could not read one for the zone the
+    -- crate is in, and plenty of their messages carry no zone at all. Refused
+    -- here rather than passed on: a report with nothing to key it by is not a
+    -- report, and letting it through only produced a line saying "invalid".
+    local zoneID, shardID = zoneOf(data.zoneID), shardOf(data.shardhist)
+    if not zoneID then return nil, "no zone" end
+    if not shardID then return nil, "no shard" end
+
+    local spotter = data.spotter
+    return {
+        stage   = RCT_STAGE[data.captureState] or "anchor",
+        zoneID  = zoneID,
+        shardID = shardID,
+        at      = tonumber(data.ts),
+        from    = (type(spotter) == "string" and spotter ~= "" and spotter) or sender,
+        via     = "RCT",
+    }
+end
+
+-- AceComm's framing, which every addon built on it inherits.
+--
+-- A message too long for one packet is split and each piece marked: \1 first,
+-- \2 next, \3 last. A whole message whose own first byte would collide with
+-- those is escaped with \4. Anything else arrived complete.
+--
+-- Worth more than it looks. RCT's bulk sync carries its entire crate database
+-- and arrives in three or four pieces -- 145, 255 and 255 bytes from one
+-- client in one burst -- so refusing split messages threw away most of what
+-- there was to read.
+--
+-- The caller holds the state, keyed by sender. Returns the complete message,
+-- or nil and why not.
+local PART_MAX = 16      -- a sync this long is not one somebody meant to send
+local PART_LIFE = 30     -- a run that stalls is abandoned rather than kept
+
+function Remote.Reassemble(state, text, sender, now)
+    if type(text) ~= "string" or text == "" then return nil, "empty" end
+    if type(state) ~= "table" or type(sender) ~= "string" then return nil, "empty" end
+    now = tonumber(now) or 0
+
+    local mark = text:byte(1)
+    if mark > 4 then return text end
+    if mark == 4 then return text:sub(2) end
+
+    local held = state[sender]
+    if held and (now - held.at) > PART_LIFE then held = nil end
+
+    if mark == 1 then
+        state[sender] = { at = now, pieces = { text:sub(2) } }
+        return nil, "partial"
+    end
+
+    -- A continuation with no beginning: this client started listening in the
+    -- middle of somebody's sync, which is ordinary on login.
+    if not held then
+        state[sender] = nil
+        return nil, "orphan"
+    end
+
+    held.pieces[#held.pieces + 1] = text:sub(2)
+    held.at = now
+    if #held.pieces > PART_MAX then
+        state[sender] = nil
+        return nil, "too long"
+    end
+    if mark == 2 then return nil, "partial" end
+
+    state[sender] = nil
+    return table.concat(held.pieces)
+end
