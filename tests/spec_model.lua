@@ -351,11 +351,36 @@ local function announce(over)
     return Model.Announcement(row)
 end
 
-t.test("a crate on the ground is announced with where it is", function()
-    local said = announce({ live = { phase = "ground", x = 0.402, y = 0.783 } })
+-- No coordinates anywhere: the pin that goes with the message points at the
+-- exact spot, so numbers beside it are the same fact twice. Time is what the
+-- reader is weighing.
+t.test("a crate on the ground is announced with how long it has been there", function()
+    local said = Model.Announcement(
+        { zoneID = ZA, shardID = 45675,
+          live = { phase = "ground", since = T0, x = 0.402, y = 0.783 } }, T0 + 35)
     t.ok(said:find("ON THE GROUND", 1, true), said)
-    t.ok(said:find("40.2, 78.3", 1, true), said)
+    t.ok(said:find("0:35 so far", 1, true), said)
+    t.notOk(said:find("40.2", 1, true), "the pin already says where")
     t.ok(said:find("45675", 1, true), "the raid needs to know which copy")
+end)
+
+t.test("a crate our side claimed says so, and how long is left when that is known", function()
+    local mine = { phase = "ground", since = T0, mine = true }
+    local said = Model.Announcement({ zoneID = ZA, shardID = 1, live = mine }, T0 + 20)
+    t.ok(said:find("ours", 1, true), said)
+    t.ok(said:find("0:20 so far", 1, true), said)
+
+    mine.toGone = 75
+    said = Model.Announcement({ zoneID = ZA, shardID = 1, live = mine }, T0 + 20)
+    t.ok(said:find("1:15 left", 1, true), said)
+end)
+
+t.test("the other live states already carried a time and gained no numbers", function()
+    local falling = Model.Announcement(
+        { zoneID = ZA, shardID = 1,
+          live = { phase = "falling", toGround = 42, x = 0.4, y = 0.7 } }, T0)
+    t.ok(falling:find("landing in 0:42", 1, true), falling)
+    t.notOk(falling:find("40.0", 1, true), "the pin says where")
 end)
 
 t.test("a falling crate is announced with how long is left", function()
@@ -413,4 +438,81 @@ end)
 t.test("a claimed crate is still a landing worth learning from", function()
     t.ok(ns.LANDED_STAGE.claimed, "it is lying where it landed")
     t.ok(ns.LANDED_STAGE.ground)
+end)
+
+-- What the row says about a crate our side has claimed: a countdown once the
+-- readings agree, a stopwatch until then. An invented countdown would be worse
+-- than an honest count up.
+t.test("a claimed crate counts up while nobody knows how long they last", function()
+    ns.db = { linger = {} }
+    ns.Scanner = { LiveCrate = function() return
+        { phase = "ground", groundAt = T0, mine = true, claimedAt = T0 } end }
+    local live = Model.LiveFor(ZA, T0 + 45)
+    ns.Scanner, ns.db = nil, nil
+    t.eq(live.held, 45)
+    t.eq(live.toGone, nil, "nothing measured, so nothing counted down")
+end)
+
+t.test("and counts down once they do", function()
+    local linger = {}
+    for _, secs in ipairs({ 118, 120, 122 }) do ns.Airtime.NoteLinger(linger, ZA, secs) end
+    ns.db = { linger = linger }
+    ns.Scanner = { LiveCrate = function() return
+        { phase = "ground", groundAt = T0, mine = true, claimedAt = T0 } end }
+    local live = Model.LiveFor(ZA, T0 + 45)
+    ns.Scanner, ns.db = nil, nil
+    t.eq(live.toGone, 75, "120 measured, 45 gone")
+end)
+
+t.test("a countdown that has run out shows nothing left rather than going negative", function()
+    local linger = {}
+    for _, secs in ipairs({ 118, 120, 122 }) do ns.Airtime.NoteLinger(linger, ZA, secs) end
+    ns.db = { linger = linger }
+    ns.Scanner = { LiveCrate = function() return
+        { phase = "ground", groundAt = T0, mine = true, claimedAt = T0 } end }
+    local live = Model.LiveFor(ZA, T0 + 500)
+    ns.Scanner, ns.db = nil, nil
+    t.eq(live.toGone, 0)
+end)
+
+-- A sighting is about a moment and moments pass. Nobody retracts one, so an
+-- "in the air" from four minutes ago went on saying inbound long after the
+-- crate had landed and somebody had taken it.
+t.test("a transport report stops being true once the flight is over", function()
+    local flight = {}
+    for _, secs in ipairs({ 70, 72, 74 }) do ns.Airtime.NoteFlight(flight, ZA, secs) end
+    ns.db = { flight = flight, descent = {} }
+    local report = { zoneID = ZA, stage = "flying", at = T0 }
+    t.ok(Model.StillTrue(report, T0 + 60), "still in the air")
+    t.notOk(Model.StillTrue(report, T0 + 120), "it dropped its crate a while back")
+    ns.db = nil
+end)
+
+t.test("a parachute report stops being true once the fall is over", function()
+    local descent = {}
+    for _, secs in ipairs({ 86, 86, 87 }) do ns.Airtime.NoteDescent(descent, ZA, secs) end
+    ns.db = { flight = {}, descent = descent }
+    local report = { zoneID = ZA, stage = "falling", at = T0 }
+    t.ok(Model.StillTrue(report, T0 + 60))
+    t.notOk(Model.StillTrue(report, T0 + 100), "it is on the ground, and whose is unknown")
+    ns.db = nil
+end)
+
+t.test("a crate reported on the ground is governed by its own lifetime", function()
+    ns.db = { flight = {}, descent = {} }
+    t.ok(Model.StillTrue({ zoneID = ZA, stage = "ground", at = T0 }, T0 + 500),
+        "Remote decides when that stops mattering, not the legs")
+    ns.db = nil
+end)
+
+t.test("a stale report does not put a zone at the top of the window", function()
+    local flight = {}
+    for _, secs in ipairs({ 70, 72, 74 }) do ns.Airtime.NoteFlight(flight, ZA, secs) end
+    ns.db = { flight = flight, descent = {}, linger = {} }
+    ns.remote = ns.Remote.New()
+    ns.Remote.Note(ns.remote, { zoneID = ZA, shardID = 5, stage = "flying",
+                                at = T0, from = "Scout" }, T0)
+    t.ok(Model.LiveFor(ZA, T0 + 30), "fresh enough to act on")
+    t.eq(Model.LiveFor(ZA, T0 + 150), nil, "and nothing to say once it cannot be true")
+    ns.db, ns.remote = nil, nil
 end)

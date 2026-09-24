@@ -74,12 +74,18 @@ t.test("the most urgent live report wins, then the freshest", function()
     t.eq(shard, 2)
 end)
 
+-- Written against the lifetime rather than a number, because the right
+-- lifetime is a judgement that has already changed once: ground was three
+-- minutes until it was clear a raid takes a crate within seconds of it
+-- landing, and the cost of the report outliving the crate falls on whoever
+-- crosses a zone for it.
 t.test("reports age out of the list without being cleared by hand", function()
     local store = Remote.New()
+    local lasts = Remote.LIFETIME.ground
     Remote.Note(store, report({ stage = "ground" }), T0)
-    t.ok(Remote.For(store, HA, T0 + 100))
-    t.eq(Remote.For(store, HA, T0 + 500), nil, "nobody left it on the ground that long")
-    t.eq(Remote.Count(store, T0 + 500), 0)
+    t.ok(Remote.For(store, HA, T0 + lasts - 10))
+    t.eq(Remote.For(store, HA, T0 + lasts + 10), nil, "nobody left it lying that long")
+    t.eq(Remote.Count(store, T0 + lasts + 10), 0)
 end)
 
 t.test("expiring drops the aged entries and the zone with them", function()

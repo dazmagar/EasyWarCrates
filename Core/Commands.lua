@@ -221,7 +221,8 @@ HANDLERS.airtime = function(rest)
                     d.dist and ("  |cffffd100%.1f%% away|r"):format(d.dist) or "",
                     d.lag and ("  |cff777777%ds circling first|r"):format(d.lag) or "",
                     d.flip and ("  |cff33ff99art changed at %ds|r"):format(d.flip) or "",
-                    d.partial and "  |cffff8800joined mid-fall, not counted|r" or ""))
+                    d.partial and ("  |cffff8800not counted: %s|r"):format(
+                        d.why or "joined mid-fall") or ""))
             end
         else
             ns.Print(("  %-3s %3ds  |cff777777guess, nothing measured here|r"):format(

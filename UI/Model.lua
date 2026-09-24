@@ -26,8 +26,19 @@ function Model.LiveFor(zoneID, now)
     local live = S and S.LiveCrate and S.LiveCrate(zoneID)
     if live then
         if live.phase == "ground" then
+            -- A claimed crate is still lootable and the question is how
+            -- long for. Counted down when the readings say so and counted up
+            -- when they do not, because an invented countdown is worse than
+            -- an honest stopwatch.
+            local toGone, held
+            if live.mine and live.claimedAt then
+                held = now - live.claimedAt
+                local lasts = ns.Airtime.Linger(ns.db and ns.db.linger, zoneID)
+                if lasts then toGone = math.max(0, lasts - held) end
+            end
             return { phase = "ground", since = live.groundAt, rank = 1,
-                     mine = live.mine, x = live.x, y = live.y }
+                     mine = live.mine, held = held, toGone = toGone,
+                     x = live.x, y = live.y }
         end
         local eta = ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, nil, nil, live.since, now)
         return { phase = "falling", toGround = eta and eta.toGround or nil,
@@ -51,6 +62,7 @@ function Model.LiveFor(zoneID, now)
     -- report ranks exactly as the same sighting of our own would, so a
     -- parachute a scout can see outranks a transport this client can.
     local report = ns.Remote and ns.Remote.For(ns.remote, zoneID, now)
+    if report and not Model.StillTrue(report, now) then report = nil end
     if report then
         local phase = report.stage == "flying" and "inbound" or report.stage
         local eta = report.stage == "falling"
@@ -84,6 +96,29 @@ local function groundAt(zoneID, remaining)
     local flight = ns.Airtime.Flight(ns.db and ns.db.flight, zoneID)
     local descent = ns.Airtime.Descent(ns.db and ns.db.descent, zoneID)
     return remaining + flight + descent
+end
+
+-- Whether a report still describes what is happening.
+--
+-- A sighting is about a moment, and moments pass. Nobody retracts one, so an
+-- "in the air" from four minutes ago went on saying inbound long after the
+-- crate had landed and somebody had taken it -- the row looked like knowledge
+-- and was a memory.
+--
+-- The measured legs say how long each stage can still be true for: a transport
+-- is in the air for one flight, a parachute is up for one descent. Past that
+-- the report is not evidence of anything happening now, and the row falls back
+-- to the timer rather than guessing at what became of it.
+function Model.StillTrue(report, now)
+    if type(report) ~= "table" or not report.at then return false end
+    local elapsed = now - report.at
+    if report.stage == "flying" then
+        return elapsed <= ns.Airtime.Flight(ns.db and ns.db.flight, report.zoneID)
+    end
+    if report.stage == "falling" then
+        return elapsed <= ns.Airtime.Descent(ns.db and ns.db.descent, report.zoneID)
+    end
+    return true
 end
 
 -- Rows for the window, in the order they should be drawn.
@@ -269,7 +304,7 @@ end
 -- nil when the row has nothing worth saying: announcing "nothing is known
 -- about this zone" to forty people is noise, and the one thing an announcement
 -- must never do is waste the channel it is asking for.
-function Model.Announcement(row)
+function Model.Announcement(row, now)
     if type(row) ~= "table" or not row.zoneID then return nil end
     local where = ns.GetZoneName(row.zoneID)
     local shard = row.shardID and ("  shard %s"):format(tostring(row.shardID)) or ""
@@ -286,17 +321,28 @@ function Model.Announcement(row)
     if live and live.via == "RCT" then return nil end
 
     if live then
-        local at = (live.x and live.y)
-            and (" at %.1f, %.1f"):format(live.x * 100, live.y * 100) or ""
+        -- No coordinates. The pin that goes with this points at the exact
+        -- spot, so a pair of numbers beside it is the same fact twice. Time is
+        -- the thing the reader is actually weighing.
         if live.phase == "ground" then
-            return ("%s: crate ON THE GROUND%s%s"):format(where, at, shard)
+            -- The one state that carried no time at all, and the one where it
+            -- decides the answer: a raid will cross a zone for a crate that
+            -- landed five seconds ago and not for one that landed two minutes
+            -- ago.
+            local age = (now and live.since) and (" (%s so far)"):format(clock(now - live.since))
+                or ""
+            if live.mine then
+                local left = live.toGone and (", %s left"):format(clock(live.toGone)) or age
+                return ("%s: crate ON THE GROUND, ours%s%s"):format(where, left, shard)
+            end
+            return ("%s: crate ON THE GROUND%s%s"):format(where, age, shard)
         end
         if live.phase == "falling" then
-            return ("%s: crate landing in %s%s%s"):format(where,
-                live.toGround and clock(live.toGround) or "moments", at, shard)
+            return ("%s: crate landing in %s%s"):format(where,
+                live.toGround and clock(live.toGround) or "moments", shard)
         end
-        return ("%s: transport in the air%s%s%s"):format(where,
-            live.toGround and (", down in " .. clock(live.toGround)) or "", at, shard)
+        return ("%s: transport in the air%s%s"):format(where,
+            live.toGround and (", down in " .. clock(live.toGround)) or "", shard)
     end
 
     if row.remaining then

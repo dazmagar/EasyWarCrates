@@ -59,6 +59,7 @@ local fallingSince = {}
 local arrivedAt = {}
 -- Keys whose parachute was already in the air when we first saw it.
 local partialFall = {}
+local partialWhy = {}
 local releaseLag = {}
 -- The art the parachute vignette was drawn with, and when it first changed.
 -- Dmitrii reports crates sitting on the ground with the parachute still shown
@@ -114,6 +115,10 @@ local liveCrate = {}
 -- Stop showing a crate nobody has seen for this long while standing in its
 -- zone. It has been taken, or it was never really there.
 local LIVE_STALE = 90
+
+-- How long a crate must go unseen, while the player stands in its zone, before
+-- it counts as gone rather than as one quiet sweep.
+local GONE_GRACE = 15
 
 -- Is a transport being tracked here right now? A crate that has not been
 -- released yet is still something happening in the zone, and the window has
@@ -381,6 +386,7 @@ function Scanner.Reset()
     fallingSince = {}
     arrivedAt = {}
     partialFall = {}
+    partialWhy = {}
     releaseLag = {}
     fallAtlas, atlasFlip = {}, {}
     lastSweptStamp, lastFalling = {}, {}
@@ -581,12 +587,39 @@ function Scanner.OnVignettesUpdated()
     -- claimed vignette separates them, and its absence is the interesting
     -- case. Only reported for the zone the player is actually in, because
     -- flying out of range of a crate is not news.
+    -- Noticed sooner than LIVE_STALE would, because a crate that vanished is
+    -- news while the player is still standing where it was, and because a
+    -- reading of how long it lingered is worthless if it cannot be taken until
+    -- ninety seconds after the fact. Long enough that one sweep missing a
+    -- vignette does not count as it going away.
+    -- Two graces, because the vignette going away means different things.
+    --
+    -- A crate nobody claimed: gone quickly, because the window saying ON THE
+    -- GROUND at somebody about to cross a zone is the expensive mistake.
+    --
+    -- A crate our own side claimed: given the long grace, because the marker
+    -- stops being drawn before the crate stops being lootable -- Dmitrii
+    -- watched the row vanish while he was still standing in the zone with it
+    -- in front of him. Whether the marker tracks lootability at all is what
+    -- the linger readings are being collected to answer.
     local lost = liveCrate[zoneID]
-    if lost and lost.phase == "ground" and (stamp - (lost.seen or 0)) > LIVE_STALE then
+    local grace = (lost and lost.mine) and LIVE_STALE or GONE_GRACE
+    if lost and lost.phase == "ground" and (stamp - (lost.seen or 0)) > grace then
         liveCrate[zoneID] = nil
         local moved = shardChangedAt[zoneID]
             and (stamp - shardChangedAt[zoneID]) < LIVE_STALE * 2
         local ours = claimedByUs[zoneID] and (stamp - claimedByUs[zoneID]) < CLAIM_MEMORY
+        -- How long it stayed after our side claimed it. Nobody has measured
+        -- this, so it is collected before it is ever shown. Dated from the
+        -- last sighting rather than from now: the grace above is this client
+        -- waiting, not the crate lying there.
+        if ours then
+            local lingered = (lost.seen or stamp) - claimedByUs[zoneID]
+            if ns.Airtime.NoteLinger(db.linger, zoneID, lingered) then
+                ns.Debug(("claimed crate in %s lasted %ds"):format(
+                    ns.GetZoneAbbr(zoneID), math.floor(lingered + 0.5)))
+            end
+        end
         -- No claim of our own drawn and the zone did not move: what is left is
         -- the other side taking it. That is the case worth naming, because it
         -- is the one where the window would otherwise go on saying ON THE
@@ -720,6 +753,7 @@ function Scanner.OnVignettesUpdated()
                                     ns.GetZoneName(zoneID), side .. "'s"))
                             end
                             live.mine, live.seen = true, stamp
+                            live.claimedAt = live.claimedAt or stamp
                             live.shard = live.shard or shard
                             live.phase = live.phase or "ground"
                             live.groundAt = live.groundAt or stamp
@@ -766,12 +800,19 @@ function Scanner.OnVignettesUpdated()
                                 -- two look identical. Only a watch longer than
                                 -- any possible fall tells them apart, and even
                                 -- then only because the player has not moved.
-                                local sawItStart
+                                -- Why a reading was refused, kept because
+                                -- three different things refuse one and they
+                                -- are not equally likely to be right. A fall
+                                -- watched from three tenths of a percent away
+                                -- came back flagged, and nothing recorded
+                                -- which of the three had done it.
+                                local sawItStart, refusedBy
                                 local arrived = arrivedAt[zoneID]
                                 if reshardedRecently(zoneID, stamp) then
                                     -- A different copy of the zone since this
                                     -- fall could have begun. Whatever is under
                                     -- this parachute, we did not watch it go.
+                                    refusedBy = "the zone re-sharded"
                                     sawItStart = false
                                 elseif arrived and (stamp - arrived) <= ARRIVED_RECENT then
                                     sawItStart = true
@@ -781,8 +822,15 @@ function Scanner.OnVignettesUpdated()
                                     and (stamp - zoneWatchSince[zoneID]) >= MIN_WATCH then
                                     sawItStart = true
                                 end
+                                if not sawItStart and not refusedBy then
+                                    refusedBy = (arrived and "the arrival was too long ago")
+                                        or (not prevSweep and "nothing had been swept yet")
+                                        or (prevFalling[key] and "the parachute was already up")
+                                        or "the zone had not been watched long enough"
+                                end
                                 fallingSince[key] = stamp
                                 partialFall[key] = not sawItStart or nil
+                                partialWhy[key] = refusedBy
 
                                 -- The first leg, timed rather than computed.
                                 -- Only an announcement is really the spawn;
@@ -806,14 +854,18 @@ function Scanner.OnVignettesUpdated()
                             local flip = atlasFlip[key] and (atlasFlip[key] - fallingSince[key]) or nil
                             fallingSince[key] = nil
                             local overlapped, partial = fallingNow[key], partialFall[key]
+                            local why = partialWhy[key]
+                            partialWhy[key] = nil
                             local lag = releaseLag[key]
                             partialFall[key], releaseLag[key] = nil, nil
+                            partialWhy[key] = nil
                             fallAtlas[key], atlasFlip[key] = nil, nil
                             local dist = distanceFromPlayer(zoneID, pos)
                             if secs <= DESCENT_PAIR_MAX
                                 and ns.Airtime.NoteDescent(db.descent, zoneID, secs, {
                                     overlapped = overlapped, partial = partial,
                                     pos = pos, lag = lag, flip = flip, dist = dist,
+                                    why = why,
                                 }) then
                                 ns.OnDescentMeasured(zoneID, secs, partial, dist)
                             end

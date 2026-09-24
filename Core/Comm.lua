@@ -72,6 +72,17 @@ local function inGroupNow(sender)
     return ok and yes and true or false
 end
 
+-- Whether whoever sent this leads the group. Worth knowing because the game
+-- gathers party members onto the leader's shard when they join, so between
+-- two people reporting different copies of a zone, the leader's is the one the
+-- raid converges on.
+local function leads(sender)
+    local ok, yes = pcall(function()
+        return UnitIsGroupLeader(sender) or UnitIsGroupLeader(nameOnly(sender))
+    end)
+    return (ok and yes) and true or false
+end
+
 local function isSelf(sender)
     local me = UnitName("player")
     return me ~= nil and nameOnly(sender) == me
@@ -109,6 +120,7 @@ local function zoneNames()
 end
 
 local function take(report, channel)
+    report.leader = report.leader or leads(report.from) or nil
     local verdict = ns.Remote.Note(ns.remote, report, GetServerTime())
     log({ via = report.via, from = report.from, channel = channel,
           text = ("%s in %s shard %s"):format(report.stage,
@@ -324,7 +336,7 @@ local lastClick = {}
 
 function Comm.AnnounceRow(row)
     if type(row) ~= "table" then return "nothing" end
-    local text = ns.Model.Announcement(row)
+    local text = ns.Model.Announcement(row, GetServerTime())
     if not text then return "nothing" end
     if not IsInGroup() then return "alone" end
 

@@ -109,6 +109,9 @@ function Airtime.NoteDescent(store, zoneID, seconds, info)
         secs = seconds,
         overlapped = info.overlapped or nil,
         partial = info.partial or nil,
+        -- Which of the three refusals flagged it, because they are not equally
+        -- likely to be right and one of them is this addon's own guard.
+        why = info.partial and info.why or nil,
         lag = info.lag and math.floor(info.lag + 0.5) or nil,
         flip = info.flip and math.floor(info.flip + 0.5) or nil,
         -- Eversong reads 14, 43 and 84 against a 86 cluster in four other
@@ -273,6 +276,50 @@ end
 function Airtime.Flight(store, zoneID)
     local typical, n, lo, hi, over, part, source = describe(store, zoneID, FLIGHT_GUESS)
     return typical, n, lo, hi, over, part, source
+end
+
+-- How long a crate stays on the ground after your own side claims it.
+--
+-- Nobody knows yet, which is why there is no guess here. A claimed crate is
+-- still lootable -- the marker flags which side captured it, not that anybody
+-- carried it off -- and the question a player has at that moment is how long
+-- they have. Answering it with an invented number would be worse than
+-- answering with the time elapsed, which is at least true.
+--
+-- Measured from the claim to the last time the marker was drawn. Note what
+-- that is and is not: it is how long the marker lasted, and whether the marker
+-- lasts as long as the crate is lootable is an open question. Dmitrii watched
+-- a claimed crate's row vanish while the crate was still in front of him,
+-- which is a reason to suspect it does not.
+--
+-- So the readings are collected and not yet trusted to count anything down.
+-- If they cluster on one figure the marker is on a timer and the countdown is
+-- honest; if they scatter it is tracking how fast a raid loots, and no
+-- countdown built from it would ever have been true.
+local LINGER_MIN, LINGER_MAX = 5, 600
+Airtime.LINGER_MIN, Airtime.LINGER_MAX = LINGER_MIN, LINGER_MAX
+
+function Airtime.NoteLinger(store, zoneID, seconds)
+    if type(store) ~= "table" or not zoneID then return nil end
+    seconds = tonumber(seconds)
+    if not seconds or seconds < LINGER_MIN or seconds > LINGER_MAX then return nil end
+    local list = store[zoneID]
+    if type(list) ~= "table" then list = {}; store[zoneID] = list end
+    list[#list + 1] = { secs = seconds }
+    while #list > 40 do table.remove(list, 1) end
+    return list[#list]
+end
+
+-- nil until the readings actually agree, and a stricter test than the other
+-- two legs get. They may answer from one or two readings, on the reasoning
+-- that two cannot be shown to disagree and something beats the shipped guess.
+-- Neither half holds here: 60 and 400 disagree plainly, and there is no
+-- shipped guess to beat because nobody has measured this. So this waits for a
+-- cluster and says nothing until it has one.
+function Airtime.Linger(store, zoneID)
+    local typical, n, lo, hi, _, _, source = describe(store, zoneID, 0)
+    if source == "guess" or n < CLUSTER_MIN then return nil, n, lo, hi, source end
+    return typical, n, lo, hi, source
 end
 
 -- How long ago a crate found lying on the ground actually spawned.

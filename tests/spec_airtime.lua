@@ -419,3 +419,28 @@ t.test("a leg borrowed from other zones still counts as measured", function()
     local back = Airtime.SpawnOffset(flight, descent, "ES")
     t.eq(back, 158, "Eversong disagrees with itself, so it borrows 86 and says so elsewhere")
 end)
+
+-- How long a claimed crate stays lootable. Nobody has measured it, here or in
+-- any addon worth copying, so it is collected before it is ever shown.
+t.test("nothing is claimed about how long a crate lasts until it is measured", function()
+    local store = {}
+    t.eq(Airtime.Linger(store, ZONE), nil, "no readings, no answer")
+    Airtime.NoteLinger(store, ZONE, 60)
+    Airtime.NoteLinger(store, ZONE, 400)
+    t.eq(Airtime.Linger(store, ZONE), nil, "two readings that disagree are not an answer")
+end)
+
+t.test("once the readings agree it answers", function()
+    local store = {}
+    for _, secs in ipairs({ 118, 120, 122 }) do Airtime.NoteLinger(store, ZONE, secs) end
+    local lasts, n = Airtime.Linger(store, ZONE)
+    t.eq(lasts, 120)
+    t.eq(n, 3)
+end)
+
+t.test("a reading outside anything plausible is refused", function()
+    local store = {}
+    t.eq(Airtime.NoteLinger(store, ZONE, 1), nil, "a crate does not last one second")
+    t.eq(Airtime.NoteLinger(store, ZONE, 4000), nil)
+    t.eq(Airtime.NoteLinger(nil, ZONE, 100), nil)
+end)

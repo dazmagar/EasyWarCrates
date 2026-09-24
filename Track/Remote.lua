@@ -35,7 +35,11 @@ ns.Remote = Remote
 --
 -- Lives as long as somebody plausibly stays put. They re-shard when they leave
 -- and come back, so it is not worth more than that.
-local LIFETIME = { flying = 300, falling = 200, ground = 180, claimed = 90,
+-- ground was three minutes and that was far too generous. A raid takes a crate
+-- within seconds of it landing, nobody retracts a sighting, and the cost of
+-- being wrong falls entirely on whoever reads it: they cross a zone and find
+-- nothing. Ninety seconds is still longer than most crates last.
+local LIFETIME = { flying = 240, falling = 200, ground = 90, claimed = 90,
                    anchor = 1200, here = 900 }
 Remote.LIFETIME = LIFETIME
 
@@ -86,6 +90,7 @@ function Remote.Note(store, report, now)
         at    = at,
         from  = report.from,
         via   = report.via,
+        leader = report.leader or nil,
         x     = tonumber(report.x),
         y     = tonumber(report.y),
         -- Carried across a replacement: the raid acting on the first report is
@@ -287,6 +292,10 @@ function Remote.FromAlert(text, sender, zoneByName, now)
     return {
         stage = "flying", zoneID = zoneID, shardID = shardID,
         at = tonumber(now) or 0, from = sender, via = "RCT",
+        -- RCT sends this as a raid warning, and the game lets only a leader or
+        -- an assistant send one. So the sender is privileged by construction,
+        -- whatever this client can work out about the roster.
+        leader = true,
     }
 end
 
@@ -341,18 +350,33 @@ function Remote.Supersede(store, zoneID, shardID, stage)
 end
 
 -- Which copy of a zone the raid is in, as somebody standing there reports it.
--- Returns the shard, who said so, and how long ago.
+-- Returns the shard, who said so, how long ago, and whether they lead.
+--
+-- The leader's word outranks anybody else's, and not by courtesy. The game
+-- moves party members onto the leader's shard when they join, provided they
+-- are in the leader's zone, which makes the leader the one point the group
+-- converges on. Nothing does that on a zone change, so it is a strong hint
+-- rather than a guarantee -- but between two members reporting different
+-- copies of a zone, the leader's is the one the raid ends up in.
 function Remote.ShardFor(store, zoneID, now)
     local shards = store and store[zoneID]
     if not shards then return nil end
     local best, bestShard
     for shardID, entry in pairs(shards) do
-        if alive(entry, now) and (not best or entry.at > best.at) then
-            best, bestShard = entry, shardID
+        if alive(entry, now) then
+            local better
+            if not best then
+                better = true
+            elseif entry.leader ~= best.leader then
+                better = entry.leader and true or false
+            else
+                better = entry.at > best.at
+            end
+            if better then best, bestShard = entry, shardID end
         end
     end
     if not best then return nil end
-    return bestShard, best.from, now - best.at
+    return bestShard, best.from, now - best.at, best.leader
 end
 
 -- RCT's own prefix, decoded without bundling anything.
@@ -407,6 +431,11 @@ function Remote.DecodeRCT(text, sender, inflate)
 
     local tag, encoded = text:match("^([A-Z_]+)~([^~]+)")
     if not tag or not encoded then return nil, "not-theirs" end
+    -- SYNC is their whole database being replayed at a new group member, and
+    -- DELETE_ALL is housekeeping. Neither is anybody looking at a crate, and a
+    -- historical row read as a live sighting is how a zone ends up saying
+    -- "inbound" about a crate that landed ten minutes ago.
+    if tag == "SYNC" or tag == "DELETE_ALL" then return nil, "their database, not a sighting" end
 
     local data = (inflate or borrowedInflate)(encoded)
     if type(data) ~= "table" then return nil, "no-library" end

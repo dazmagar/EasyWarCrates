@@ -87,9 +87,13 @@ local function makeRow(parent, index)
                 or d.live.phase == "falling" and "a crate is coming down here now"
                 or "a transport is in the air here", 0.2, 1, 0.2)
             if d.live.from then
-                GameTooltip:AddLine(("%s reported this, through %s. Nobody here has seen "
-                    .. "it, and it is about the copy of the zone they are in."):format(
-                    tostring(d.live.from), tostring(d.live.via or "this addon")),
+                -- Its own clock: this runs from a tooltip, not from the
+                -- refresh that holds one.
+                local seen = d.live.since
+                    and (" %ds ago"):format(math.floor(GetServerTime() - d.live.since)) or ""
+                GameTooltip:AddLine(("%s saw this%s, through %s. Nobody here has, and it "
+                    .. "is about the copy of the zone they are in."):format(
+                    tostring(d.live.from), seen, tostring(d.live.via or "this addon")),
                     0.6, 0.8, 0.7, true)
             end
         end
@@ -147,8 +151,17 @@ local function paintRow(r, row, isNext)
             -- Claimed by your own side is not finished with: the marker says
             -- who captured it, and yours captured it, so it is still yours to
             -- go and take.
+            local held = ""
+            if row.live.toGone then
+                held = (" %s"):format((ns.FormatClock(row.live.toGone):gsub("^%s+", "")))
+            elseif row.live.held then
+                -- Counting up, because how long one lasts has never been
+                -- measured. It becomes a countdown once the readings agree.
+                held = (" %s so far"):format((ns.FormatClock(row.live.held):gsub("^%s+", "")))
+            end
             r.right:SetText(said .. (row.live.mine
-                and "|cff33ff99ON THE GROUND, OURS|r" or "|cff33ff99ON THE GROUND|r"))
+                and ("|cff33ff99OURS%s|r"):format(held)
+                or "|cff33ff99ON THE GROUND|r"))
             r.bar:SetValue(1)
         elseif row.live.phase == "falling" then
             r.right:SetText(said .. (row.live.toGround

@@ -18,6 +18,7 @@ local DEFAULTS = {
     -- same reason. Written to disk on /reload, like everything else here.
     log       = nil,
     flight    = nil,    -- measured spawn-to-parachute times, per zone
+    linger    = nil,    -- how long a claimed crate stayed lootable
     descent   = nil,    -- measured parachute times, per zone
     release   = nil,    -- how wrong the release-time estimate runs, per zone
     -- Tell the group what this client sees. Receiving needs no switch:
@@ -76,6 +77,7 @@ local function applyDefaults(db)
     db.route   = db.route or {}
     db.descent = db.descent or {}
     db.flight  = db.flight or {}
+    db.linger  = db.linger or {}
     db.release = db.release or {}
     db.log     = db.log or {}
     -- Deliberately not on db. db IS the saved table, so a store hung off
@@ -137,11 +139,18 @@ function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict, backdated)
     -- parachute used to leave the map bare: there is no transport left to
     -- predict from, and the one position nobody had to guess at -- printed on
     -- the line above -- was the one never pinned.
+    -- Far enough to be worth moving the pin for. A parachute drifts a little
+    -- on every sweep, and at the old hundredth of a percent every one of those
+    -- counted as a new place to point at.
+    local PIN_MOVED = 0.004
     local prev = pinnedAt[zoneID]
-    if ns.db.waypoint and stage ~= "claimed"
-        and not (prev and math.abs(prev.x - pos.x) < 1e-4 and math.abs(prev.y - pos.y) < 1e-4) then
+    local moved = not prev
+        or math.abs(prev.x - pos.x) > PIN_MOVED or math.abs(prev.y - pos.y) > PIN_MOVED
+    -- The landing itself always re-pins, however small the drift: that is the
+    -- one position nobody had to guess at.
+    if ns.db.waypoint and stage ~= "claimed" and (moved or ns.LANDED_STAGE[stage]) then
         pinnedAt[zoneID] = { x = pos.x, y = pos.y }
-        ns.SetCratePin(zoneID, pos.x, pos.y)
+        ns.SetCratePin(zoneID, pos.x, pos.y, prev ~= nil)
     end
 
     local guess = ns.lastPrediction[zoneID]
@@ -258,14 +267,20 @@ end
 -- pin that would have worked. Attempting and then checking what actually
 -- landed is both more reliable and the thing this addon keeps telling itself
 -- to do -- look at the artefact, not the return code.
-function ns.SetCratePin(zoneID, x, y)
+-- quiet suppresses the confirmation line, not the pin. A crate under its
+-- parachute drifts, so the pin follows it for the whole descent, and saying so
+-- each time filled the chat with forty identical lines in eighty seconds.
+-- The first placement is worth one line; the rest are the same news.
+function ns.SetCratePin(zoneID, x, y, quiet)
     C_Map.ClearUserWaypoint()
     C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(zoneID, x, y))
     C_SuperTrack.SetSuperTrackedUserWaypoint(true)
 
     local set = C_Map.GetUserWaypoint()
     if set then
-        ns.Print(("  |cff777777map pin set on %s|r"):format(ns.GetZoneName(zoneID)))
+        if not quiet then
+            ns.Print(("  |cff777777map pin set on %s|r"):format(ns.GetZoneName(zoneID)))
+        end
         -- The hyperlink describes whatever waypoint is currently set, not a
         -- point of our choosing, so it is read here and only when the readback
         -- agrees about the map. Building the link by hand instead does not
