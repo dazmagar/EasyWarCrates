@@ -59,7 +59,7 @@ local function makeRow(parent, index)
         GameTooltip:AddLine(("shard %s%s"):format(tostring(d.shardID or "?"),
             said and (" -- " .. said) or ""), 0.7, 0.7, 0.7)
         if d.newShard then
-            GameTooltip:AddLine("Nothing has been timed in this copy of the zone yet. "
+            GameTooltip:AddLine("This zone has been timed, but not this copy of it. "
                 .. "A timer belongs to one copy, and entering a zone hands you one you did "
                 .. "not choose, so another copy's countdown here would look like knowledge "
                 .. "and send a raid out on the strength of it.", 1, 0.5, 0.3, true)
@@ -73,6 +73,12 @@ local function makeRow(parent, index)
                 d.live.phase == "ground" and "a crate is on the ground here now"
                 or d.live.phase == "falling" and "a crate is coming down here now"
                 or "a transport is in the air here", 0.2, 1, 0.2)
+            if d.live.from then
+                GameTooltip:AddLine(("%s reported this, through %s. Nobody here has seen "
+                    .. "it, and it is about the copy of the zone they are in."):format(
+                    tostring(d.live.from), tostring(d.live.via or "this addon")),
+                    0.6, 0.8, 0.7, true)
+            end
         end
         if d.remaining then
             GameTooltip:AddLine(("transport appears in %s"):format(
@@ -117,18 +123,23 @@ local function paintRow(r, row, isNext)
         -- The crate that is there NOW, in place of the countdown to the next.
         -- The bar shows the descent rather than the cycle, so a row that is
         -- about to be worth flying to looks different from one that is not.
+        --
+        -- A dot marks what somebody else saw rather than what this client did.
+        -- It matters: a report is about the copy of the zone THEY are in, and
+        -- flying to it is a decision about somebody else's word.
+        local said = row.live.from and "|cff33ddaa.|r" or ""
         if row.live.phase == "ground" then
-            r.right:SetText("|cff33ff99ON THE GROUND|r")
+            r.right:SetText(said .. "|cff33ff99ON THE GROUND|r")
             r.bar:SetValue(1)
         elseif row.live.phase == "falling" then
-            r.right:SetText(row.live.toGround
+            r.right:SetText(said .. (row.live.toGround
                 and ("|cffffd100landing %s|r"):format(ns.FormatClock(row.live.toGround):gsub("^%s+", ""))
-                or "|cffffd100falling|r")
+                or "|cffffd100falling|r"))
             r.bar:SetValue(0.6)
         else
-            r.right:SetText(row.live.toGround
+            r.right:SetText(said .. (row.live.toGround
                 and ("|cffffd100inbound %s|r"):format(ns.FormatClock(row.live.toGround):gsub("^%s+", ""))
-                or "|cffffd100inbound|r")
+                or "|cffffd100inbound|r"))
             r.bar:SetValue(0.3)
         end
         r.bar:SetStatusBarColor(cr, cg, cb, 1)

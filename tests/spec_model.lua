@@ -323,3 +323,23 @@ t.test("a route zone keeps its row even when its copy has nothing timed", functi
     t.ok(rows[1].newShard)
     t.eq(rows[1].remaining, nil)
 end)
+
+-- "new shard" and "never seen here" are different news and were sharing one
+-- message: Harandar read "new shard" on a profile that had never timed
+-- Harandar at all, which says the copy is the problem when the zone is.
+t.test("a zone never timed at all is not called a new shard", function()
+    standingOn(811)
+    local rows = Model.BuildRows(db({ ZA, 7, T0 - 100 }), { HA }, T0)
+    clear()
+    t.eq(rows[1].zoneID, HA)
+    t.eq(rows[1].remaining, nil)
+    t.notOk(rows[1].newShard, "nothing was ever timed here, in any copy")
+end)
+
+t.test("a zone timed elsewhere but not in this copy is a new shard", function()
+    standingOn(811)
+    local rows = Model.BuildRows(db({ HA, 7, T0 - 100 }), { HA }, T0)
+    clear()
+    t.ok(rows[1].newShard, "Harandar has been timed, just not in copy 811")
+    t.eq(rows[1].remaining, nil)
+end)

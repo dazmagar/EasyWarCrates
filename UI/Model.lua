@@ -121,11 +121,16 @@ function Model.BuildRows(db, route, now)
         -- transport comes: the crate is there, its cycle is simply in another
         -- phase. Saying so is the difference between twenty wasted minutes and
         -- knowing to move on.
+        -- Two different facts and they were sharing one message. A zone with
+        -- no timers at all has never been watched; a zone with timers but
+        -- none for this copy has been watched somewhere else. Harandar read
+        -- "new shard" on a profile that had never timed Harandar at all.
+        local timedBefore = next((db or {})[zoneID] or {}) ~= nil
         rows[#rows + 1] = {
-            -- The shard is known and nothing has been timed in it. Blank on
-            -- purpose: another copy's countdown here would look like
-            -- knowledge and send a raid somewhere on the strength of it.
-            newShard   = (known and not entry) or nil,
+            -- The copy is known, the zone has been watched, and this copy has
+            -- not. Blank on purpose: another copy's countdown here would look
+            -- like knowledge and send a raid out on the strength of it.
+            newShard   = (known and not entry and timedBefore) or nil,
             -- The shard is not known, so this timer may be for another copy.
             guessedShard = (not known and entry ~= nil) or nil,
             shardFrom  = shardFrom,
