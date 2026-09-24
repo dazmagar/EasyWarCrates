@@ -94,8 +94,13 @@ local MEASURED_MIN_CYCLES = 3
 function ns.GetZoneInterval(zoneID)
     local shipped = ZONES[zoneID] and ZONES[zoneID].interval or 1100
     if not (ns.db and ns.db.gaps and ns.Timers) then return shipped end
-    local n, mean, _, _, cycles = ns.Timers.GapStats(ns.db.gaps, zoneID)
-    if n and cycles and cycles >= MEASURED_MIN_CYCLES then
+    -- The cluster first, because one bad pairing moves a mean and cannot move
+    -- a cluster. Eversong's mean reads 1117 against a core of 1093.
+    local typical, n = ns.Timers.GapCluster(ns.db.gaps, zoneID)
+    if typical then return typical end
+
+    local gaps, mean, _, _, cycles = ns.Timers.GapStats(ns.db.gaps, zoneID)
+    if gaps and cycles and cycles >= MEASURED_MIN_CYCLES then
         return mean
     end
     return shipped

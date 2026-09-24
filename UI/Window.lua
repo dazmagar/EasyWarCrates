@@ -228,8 +228,15 @@ local function refresh()
     if shown == 0 then
         -- An empty database is the normal state for someone who has just
         -- installed this, and silence would read as broken. Say what to do.
-        frame.empty:SetText("No timers yet.\nFly to any crate zone and wait -- up to 18 minutes.\n"
-            .. "A crate already on the ground counts too.")
+        -- The weakest moment this addon has: everything it knows is
+        -- learned, so a fresh install is blind in every zone. Saying what
+        -- will fill it in is worth more than saying it is empty, and two
+        -- of the three cost the player nothing but standing still.
+        frame.empty:SetText("Nothing timed yet. Three things fill this in:\n"
+            .. "|cff33ff99-|r an NPC announcing a cycle where you stand\n"
+            .. "|cff33ff99-|r a crate you see, in the air or on the ground\n"
+            .. "|cff33ff99-|r anyone in your raid running Hated Crate Tracker\n"
+            .. "A cycle is about 18 minutes.")
         frame.empty:Show()
     else
         frame.empty:Hide()

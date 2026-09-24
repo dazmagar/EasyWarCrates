@@ -19,6 +19,7 @@ local DEFAULTS = {
     log       = nil,
     flight    = nil,    -- measured spawn-to-parachute times, per zone
     linger    = nil,    -- how long a claimed crate stayed lootable
+    phase     = nil,    -- where each shard's cycle sits, outliving Prune
     descent   = nil,    -- measured parachute times, per zone
     release   = nil,    -- how wrong the release-time estimate runs, per zone
     -- Tell the group what this client sees. Receiving needs no switch:
@@ -78,6 +79,7 @@ local function applyDefaults(db)
     db.descent = db.descent or {}
     db.flight  = db.flight or {}
     db.linger  = db.linger or {}
+    db.phase   = db.phase or ns.Phase.New()
     db.release = db.release or {}
     db.log     = db.log or {}
     -- Deliberately not on db. db IS the saved table, so a store hung off
@@ -372,7 +374,14 @@ frame:SetScript("OnEvent", function(_, event, name)
     if event ~= "ADDON_LOADED" or name ~= ADDON then return end
     EasyWarCratesDB = applyDefaults(EasyWarCratesDB or {})
     ns.db = EasyWarCratesDB
-    local dropped = ns.Timers.Prune(ns.db.crates, ns.GetZoneInterval, GetServerTime())
+    -- Before pruning, never after. Prune clears the display list, and the
+    -- display list was the only record of where each shard's cycle sits --
+    -- which is why an evening's break left the addon blind in every zone it
+    -- had already learned.
+    local now = GetServerTime()
+    ns.Phase.Absorb(ns.db.phase, ns.db.crates)
+    ns.Phase.Forget(ns.db.phase, now)
+    local dropped = ns.Timers.Prune(ns.db.crates, ns.GetZoneInterval, now)
     ns.Print("v" .. ns.version .. " loaded. |cffffffff/ewc|r for commands."
         .. (dropped > 0 and (" |cff777777(%d stale timer%s cleared)|r"):format(
             dropped, dropped == 1 and "" or "s") or ""))

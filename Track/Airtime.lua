@@ -147,33 +147,15 @@ local CLUSTER_MIN = 3
 Airtime.CLUSTER_WINDOW, Airtime.CLUSTER_MIN = CLUSTER_WINDOW, CLUSTER_MIN
 
 local function median(sorted, from, to)
-    local n = to - from + 1
-    if n % 2 == 1 then return sorted[from + (n - 1) / 2] end
-    return (sorted[from + n / 2 - 1] + sorted[from + n / 2]) / 2
+    return ns.MedianOf(sorted, from, to)
 end
 
--- The densest run of readings that agree, as first and last index into a
--- sorted list. nil when nothing agrees with anything.
---
--- A plain median cannot survive this data. Eversong holds 14, 43, 84 and 92
--- and its median is 64, which describes no drop that has ever happened there;
--- Slayer's Rise reads 103 the same way. The tails are not the descent varying.
--- Zul'Aman measured 85 and 44 at one drop point and Slayer's Rise 91 and 134
--- at another, so the same crate falling on the same spot reads forty seconds
--- apart -- that is the measurement, not the fall. Both tails have a mechanism:
--- a parachute seen late reads short, an on-ground vignette seen late reads
--- long. What is left when they are set aside is a cluster near 86 in every
--- zone measured so far.
+-- Kept as a wrapper rather than inlined: the minimum size is this module's
+-- judgement about descent readings, not a property of finding a dense run.
 local function densest(sorted)
-    local bestFrom, bestTo, bestN
-    local from = 1
-    for to = 1, #sorted do
-        while sorted[to] - sorted[from] > CLUSTER_WINDOW do from = from + 1 end
-        local n = to - from + 1
-        if not bestN or n > bestN then bestFrom, bestTo, bestN = from, to, n end
-    end
-    if not bestN or bestN < CLUSTER_MIN then return nil end
-    return bestFrom, bestTo, bestN
+    local from, to, n = ns.DensestRun(sorted, CLUSTER_WINDOW)
+    if not n or n < CLUSTER_MIN then return nil end
+    return from, to, n
 end
 
 local function fullReadings(store, zoneID)

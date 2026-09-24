@@ -30,6 +30,11 @@ local PRECISION = {
     -- Zul'Aman measured a 989s cycle against a true ~1090 with both ends of
     -- the gap seeded this way.
     midfall  = 1,
+    -- A phase recalled from a shard this client stood in before. However well
+    -- it was anchored then, extrapolating it across cycles has added error, so
+    -- it is ranked where it cannot overrule anything seen since.
+    memory   = 1,
+
     -- Somebody else's anchor, shared without saying how they got it.
     -- Ranked with the weakest thing it could have been.
     anchor   = 1,
@@ -186,6 +191,31 @@ function Timers.GapStats(store, zoneID)
         if not hi or g.per > hi then hi = g.per end
     end
     return n, elapsed / cycles, lo, hi, cycles
+end
+
+-- The cycle length from the readings that agree, and how far they scatter.
+--
+-- GapStats averages everything, which is what it is for -- it weights a
+-- four-cycle observation as four times the evidence of a one-cycle one, and
+-- that is right. What it cannot do is ignore a bad pairing, and one is enough
+-- to move the answer: Eversong reads 1087 to 1095 ten times and then 1137,
+-- 1151 and 1183, which drags its mean to 1117 and describes no cycle that
+-- zone has ever run.
+--
+-- Returns typical, n, lo, hi over the cluster, or nil when nothing agrees.
+local GAP_WINDOW = 12
+Timers.GAP_WINDOW = GAP_WINDOW
+
+function Timers.GapCluster(store, zoneID)
+    local list = store and store[zoneID]
+    if not list or #list < 3 then return nil end
+    local per = {}
+    for _, g in ipairs(list) do per[#per + 1] = g.per end
+    table.sort(per)
+
+    local from, to, n = ns.DensestRun(per, GAP_WINDOW)
+    if not n or n < 3 then return nil end
+    return ns.MedianOf(per, from, to), n, per[from], per[to]
 end
 
 function Timers.NextSpawn(entry, interval, now)

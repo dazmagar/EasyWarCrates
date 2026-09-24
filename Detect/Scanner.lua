@@ -273,12 +273,49 @@ local SHARD_FRESH = 300
 -- measurement that spans a re-shard is not a measurement of one crate.
 local shardChangedAt = {}
 
+-- Standing in a shard this client has stood in before, with no timer for it.
+--
+-- The cycle is period-locked, so an anchor from that shard still says where
+-- its cycle sits -- and Prune had been deleting exactly that for legibility,
+-- leaving the addon blind in zones it had already learned. Recall refuses once
+-- the extrapolation has drifted past being worth showing.
+local function restoreFromMemory(zoneID, shardID, stamp)
+    local db = ns.db
+    if not db or not db.phase then return end
+    if ns.Timers.Get(db.crates, zoneID, shardID) then return end
+
+    local interval = ns.GetZoneInterval(zoneID)
+    local drift = ns.Phase.Drift(db.gaps, zoneID, ns.Timers.GapCluster)
+    local ts, why, cycles, err = ns.Phase.Recall(db.phase, zoneID, shardID,
+        interval, stamp, drift)
+    if not ts then
+        if why == "drifted too far" then
+            ns.Debug(("%s shard %s was known, but %d cycles of drift puts it %ds out")
+                :format(ns.GetZoneAbbr(zoneID), tostring(shardID), cycles, err))
+        end
+        return
+    end
+
+    local verdict = ns.Timers.Record(db.crates, zoneID, shardID, ts, "memory")
+    if verdict == "new" or verdict == "refined" then
+        ns.Print(("%s |cffffffffshard %s|r -- |cff33ff99seen before|r"
+            .. " |cff777777(its cycle recalled across %d, give or take %ds)|r"):format(
+            ns.GetZoneName(zoneID), tostring(shardID), cycles, math.floor(err + 0.5)))
+        if ns.RefreshWindow then ns.RefreshWindow() end
+    end
+end
+
 local function noteShard(zoneID, shard, stamp, from)
     if not zoneID or not shard then return end
     shardSeen[zoneID] = shardSeen[zoneID] or {}
     local was = shardSeen[zoneID][from]
     if was and was.shard ~= shard then shardChangedAt[zoneID] = stamp end
     shardSeen[zoneID][from] = { shard = shard, at = stamp }
+
+    -- Only when the answer is new: this runs on every sweep otherwise.
+    if not was or was.shard ~= shard then
+        restoreFromMemory(zoneID, shard, stamp)
+    end
 end
 
 -- Whether this client has been in THIS copy of the zone long enough for a fall
@@ -392,6 +429,16 @@ function Scanner.Reset()
     lastSweptStamp, lastFalling = {}, {}
     noPosWarned = {}
     zoneWatchSince = {}
+    -- Both, and forgetting the shard itself is the point. Reset runs on a zone
+    -- change, and entering a zone re-shards you, so the first reading back in
+    -- a zone you had been in before differed from the remembered one and was
+    -- filed as the shard moving under you. It had not moved, you had.
+    --
+    -- That mistake cost real measurements: thirteen descent readings refused
+    -- on 24 Sep for a re-shard, eight of them squarely in the 83 to 94 band
+    -- every zone agrees on. The guard is meant for a shard changing while you
+    -- stand still, which this keeps it to.
+    shardSeen = {}
     shardChangedAt = {}
     claimedByUs = {}
     liveCrate = {}
