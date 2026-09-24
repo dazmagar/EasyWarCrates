@@ -450,6 +450,12 @@ HANDLERS.interval = function(rest)
                 ns.GetZoneName(zoneID), n, n == 1 and "" or "s",
                 cycles, cycles == 1 and "" or "s",
                 math.floor(mean + 0.5), math.floor(lo + 0.5), math.floor(hi + 0.5)))
+            local core, coreN, coreLo, coreHi = ns.Timers.GapCluster(ns.db.gaps, zoneID)
+            if core then
+                ns.Print(("   core: %d of %d agree within %d-%d, median |cffffd100%ds|r"):format(
+                    coreN, n, math.floor(coreLo + 0.5), math.floor(coreHi + 0.5),
+                    math.floor(core + 0.5)))
+            end
             ns.Print(("   |cff777777shipped %ds; using %s%ds|r"):format(
                 ns.GetShippedInterval(zoneID),
                 math.abs(inUse - ns.GetShippedInterval(zoneID)) > 0.5 and "|cff33ff99measured " or "shipped ",
@@ -488,6 +494,54 @@ HANDLERS.interval = function(rest)
         ns.Print(("|cff777777across all zones: %d single-cycle mean %ds, %d multi-cycle mean %ds|r"):format(
             oneN, math.floor(oneSum / oneN + 0.5),
             manyN, math.floor(manySum / manyCycles + 0.5)))
+    end
+end
+
+-- What the addon remembers about where each shard's cycle sits, and whether it
+-- would still be believed. The error column is the whole point: a phase eight
+-- cycles old in a zone whose interval is known to a second is worth showing,
+-- and the same phase in a zone that has never been measured here is not.
+HANDLERS.phase = function(rest)
+    if tostring(rest or ""):lower():match("^reset$") then
+        ns.db.phase = ns.Phase.New()
+        return ns.Print("phase memory cleared.")
+    end
+
+    local now = GetServerTime()
+    local zones = {}
+    for zoneID, shards in pairs(ns.db.phase or {}) do
+        if next(shards) then zones[#zones + 1] = zoneID end
+    end
+    if #zones == 0 then
+        return ns.Print("nothing remembered yet. A spawn seen on a shard is filed against it.")
+    end
+    table.sort(zones, function(a, b) return ns.GetZoneName(a) < ns.GetZoneName(b) end)
+
+    for _, zoneID in ipairs(zones) do
+        local interval = ns.GetZoneInterval(zoneID)
+        local drift = ns.Phase.Drift(ns.db.gaps, zoneID, ns.Timers.GapCluster)
+        ns.Print(("%s |cff777777interval %ds, drift +/-%.2fs per cycle%s|r"):format(
+            ns.GetZoneName(zoneID), math.floor(interval + 0.5), drift,
+            drift >= ns.Phase.UNKNOWN_DRIFT and " -- never measured here" or ""))
+
+        local shards = {}
+        for shardID in pairs(ns.db.phase[zoneID]) do shards[#shards + 1] = shardID end
+        table.sort(shards, function(a, b) return tostring(a) < tostring(b) end)
+
+        for _, shardID in ipairs(shards) do
+            local held = ns.db.phase[zoneID][shardID]
+            local ts, why, cycles, err, source = ns.Phase.Recall(
+                ns.db.phase, zoneID, shardID, interval, now, drift)
+            local age = now - held.ts
+            local when = age >= 3600
+                and ("%dh%02dm"):format(math.floor(age / 3600), math.floor((age % 3600) / 60))
+                or ("%dm"):format(math.floor(age / 60))
+            ns.Print(("   shard %-7s %8s ago, %d cycle%s   %s"):format(
+                tostring(shardID), when, cycles or 0, (cycles == 1) and "" or "s",
+                ts and ("|cff33ff99+/-%ds, from %s|r"):format(
+                        math.floor((err or 0) + 0.5), source or "unknown")
+                   or ("|cffff8800%s (+/-%ds)|r"):format(why, math.floor((err or 0) + 0.5))))
+        end
     end
 end
 
@@ -668,6 +722,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc route    -- the rotation, when each transport comes and when it lands")
     ns.Print("  /ewc timers   -- tracked crate timers")
     ns.Print("  /ewc interval -- measured gaps; 'drop ZONE N', 'reset [ZONE]'")
+    ns.Print("  /ewc phase    -- remembered cycle positions per shard; 'reset'")
     ns.Print("  /ewc offsets  -- whether the zones' cycles sit at a fixed offset")
     ns.Print("  /ewc airtime  -- measured parachute times; 'drop ZONE N', 'reset [ZONE]'")
     ns.Print("  /ewc shard    -- cross-check the shard number against a creature GUID")
