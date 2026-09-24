@@ -381,7 +381,8 @@ local function sweepForShard(zoneID, stamp)
     if not zoneID then return nil end
     local plates = C_NamePlate and C_NamePlate.GetNamePlates and C_NamePlate.GetNamePlates()
     for _, plate in ipairs(plates or {}) do
-        local shard = ns.Shard.FromGUID(UnitGUID(plate.namePlateUnitToken))
+        local token = plate and plate.namePlateUnitToken
+        local shard = token and ns.Shard.FromGUID(UnitGUID(token))
         if shard then
             noteShard(zoneID, shard, stamp, "unit")
             return shard
@@ -544,7 +545,11 @@ function Scanner.Narrate(now)
             local r = ns.Predict.Evaluate(ns.GetDropPoints(tr.zoneID), fit)
             local c = r.aim or r.best
             local where = c and ("%.1f,%.1f"):format(c.spot.x * 100, c.spot.y * 100) or "-"
-            state = ("%d:%s:%s"):format(fit.n, r.ok and "ok" or tostring(r.reason), where)
+            -- The sample count belongs in the line, not in the key. It moves
+            -- every tick as readings roll through the window, so including it
+            -- made every resample look like a new decision: one ambiguous
+            -- track narrated sixty identical lines in a minute on 24 Sep.
+            state = ("%s:%s"):format(r.ok and "ok" or tostring(r.reason), where)
             line = ("|cff777777n=%d span=%.1fs err=%.2fdeg p=%d%%|r  %s -> %s"):format(
                 fit.n, fit.span, math.deg(fit.err), math.floor((r.p or 0) * 100 + 0.5),
                 r.ok and "|cff33ff99COMMIT|r" or ("|cffff8800" .. tostring(r.reason) .. "|r"),
