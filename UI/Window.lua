@@ -49,6 +49,19 @@ local function makeRow(parent, index)
     -- person to see this window asked what they meant, which is the answer.
     -- The column header above says which is which; this says the rest.
     r:EnableMouse(true)
+    -- Left-click says this row to the group. A row is the smallest thing a
+    -- raid actually talks about -- "crate on the ground in ZA" -- so it is the
+    -- thing worth making one click long.
+    r:SetScript("OnMouseUp", function(self, button)
+        if button ~= "LeftButton" or not self.data or not ns.Comm then return end
+        local what = ns.Comm.AnnounceRow(self.data)
+        if what == "alone" then
+            ns.Print("|cff777777not in a group, so there is nobody to tell|r")
+        elseif what == "nothing" then
+            ns.Print("|cff777777nothing is known about that zone worth announcing|r")
+        end
+    end)
+
     r:SetScript("OnEnter", function(self)
         local d = self.data
         if not d then return end
@@ -95,6 +108,8 @@ local function makeRow(parent, index)
                 .. "so the cycle is right but its phase is only as good as when it was spotted",
                 1, 0.5, 0.3, true)
         end
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Left-click to say this to your group", 0.6, 0.6, 0.6)
         if (d.missed or 0) > 0 then
             GameTooltip:AddLine(("%d cycle%s have passed here unobserved. If the shard changed "
                 .. "in that time this timer means nothing."):format(
@@ -129,7 +144,11 @@ local function paintRow(r, row, isNext)
         -- flying to it is a decision about somebody else's word.
         local said = row.live.from and "|cff33ddaa.|r" or ""
         if row.live.phase == "ground" then
-            r.right:SetText(said .. "|cff33ff99ON THE GROUND|r")
+            -- Claimed by your own side is not finished with: the marker says
+            -- who captured it, and yours captured it, so it is still yours to
+            -- go and take.
+            r.right:SetText(said .. (row.live.mine
+                and "|cff33ff99ON THE GROUND, OURS|r" or "|cff33ff99ON THE GROUND|r"))
             r.bar:SetValue(1)
         elseif row.live.phase == "falling" then
             r.right:SetText(said .. (row.live.toGround

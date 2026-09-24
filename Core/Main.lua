@@ -100,10 +100,12 @@ local pinnedAt = {}
 -- was only guessing at, so it scores the guess, files the landing spot, and
 -- reports the timer -- but only the last of those depends on the timer having
 -- actually moved. verdict is what Timers made of it.
-function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict)
+function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict, backdated)
     if verdict == "new" or verdict == "refined" then
-        ns.Print(string.format("%s |cffffffffshard %s|r -- crate %s at |cffffd100%.1f, %.1f|r",
-            ns.GetZoneName(zoneID), tostring(shardID), stage, pos.x * 100, pos.y * 100))
+        ns.Print(string.format("%s |cffffffffshard %s|r -- crate %s at |cffffd100%.1f, %.1f|r%s",
+            ns.GetZoneName(zoneID), tostring(shardID), stage, pos.x * 100, pos.y * 100,
+            backdated and (" |cff777777(found lying there; timer set back %ds to the spawn)|r")
+                :format(math.floor(backdated + 0.5)) or ""))
     else
         ns.Debug(("crate %s in %s shard %s -> %s (timer left alone)"):format(
             stage, ns.GetZoneName(zoneID), tostring(shardID), verdict))

@@ -343,3 +343,74 @@ t.test("a zone timed elsewhere but not in this copy is a new shard", function()
     t.ok(rows[1].newShard, "Harandar has been timed, just not in copy 811")
     t.eq(rows[1].remaining, nil)
 end)
+
+-- What a click says to the group. Pinned here rather than discovered in a raid.
+local function announce(over)
+    local row = { zoneID = ZA, shardID = 45675 }
+    for k, v in pairs(over or {}) do row[k] = v end
+    return Model.Announcement(row)
+end
+
+t.test("a crate on the ground is announced with where it is", function()
+    local said = announce({ live = { phase = "ground", x = 0.402, y = 0.783 } })
+    t.ok(said:find("ON THE GROUND", 1, true), said)
+    t.ok(said:find("40.2, 78.3", 1, true), said)
+    t.ok(said:find("45675", 1, true), "the raid needs to know which copy")
+end)
+
+t.test("a falling crate is announced with how long is left", function()
+    local said = announce({ live = { phase = "falling", toGround = 42 } })
+    t.ok(said:find("landing in 0:42", 1, true), said)
+end)
+
+t.test("a transport still in the air says so", function()
+    local said = announce({ live = { phase = "inbound", toGround = 130 } })
+    t.ok(said:find("transport in the air", 1, true), said)
+    t.ok(said:find("down in 2:10", 1, true), said)
+end)
+
+t.test("with no crate in sight, the two countdowns are announced", function()
+    local said = announce({ remaining = 201, onGround = 374 })
+    t.ok(said:find("transport in 3:21", 1, true), said)
+    t.ok(said:find("lootable in 6:14", 1, true), said)
+end)
+
+t.test("a zone nothing is known about is not worth saying", function()
+    t.eq(announce(), nil)
+    t.eq(Model.Announcement(nil), nil)
+    t.eq(Model.Announcement({}), nil)
+end)
+
+-- RCT announces its own sightings as raid warnings, so the raid has already
+-- read anything that reached us that way.
+t.test("what arrived as raid chat is not said back to the raid", function()
+    t.eq(announce({ live = { phase = "ground", via = "RCT", from = "Someone" } }), nil)
+    t.ok(announce({ live = { phase = "ground", via = "WCT", from = "Someone" } }),
+        "an addon channel is invisible to anyone without that addon")
+end)
+
+-- A crate claimed by your own side is not finished with. The marker says which
+-- faction captured it, not that somebody carried it off, so the row has to go
+-- on saying it is there.
+t.test("a crate our own side claimed is still shown as lootable", function()
+    ns.Scanner = { LiveCrate = function() return
+        { phase = "ground", groundAt = T0, mine = true, x = 0.4, y = 0.78 } end }
+    local live = Model.LiveFor(ZA, T0 + 10)
+    ns.Scanner = nil
+    t.eq(live.phase, "ground")
+    t.ok(live.mine, "and the row can say whose it is")
+    t.eq(live.rank, 1, "still the most urgent thing on the list")
+end)
+
+t.test("the claiming side is never guessed from which marker arrived", function()
+    -- Nothing in the model reads the vignette id for a faction. The two
+    -- claimed ids both mean claimed, the game only draws your own side's
+    -- marker, and a table mapping id to faction was contradicted live.
+    t.eq(ns.VignetteStage(6067), "claimed")
+    t.eq(ns.VignetteStage(6068), "claimed")
+end)
+
+t.test("a claimed crate is still a landing worth learning from", function()
+    t.ok(ns.LANDED_STAGE.claimed, "it is lying where it landed")
+    t.ok(ns.LANDED_STAGE.ground)
+end)

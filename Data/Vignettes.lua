@@ -16,7 +16,15 @@ local STAGE = {
                          -- this is the one that makes prediction possible
     [2967] = "falling",  -- released, under its parachute
     [6066] = "ground",   -- landed, lootable
-    [6067] = "claimed",  -- looted
+    -- Both mean claimed and neither says by whom. The game draws only your own
+    -- faction's claimed marker, so seeing either id means YOUR side took it,
+    -- whichever one arrived -- and the marker never appearing is how you learn
+    -- the other side did. WarCratePredict shipped a 6067=Alliance,
+    -- 6068=Horde table from one player's sample and had it contradicted live:
+    -- it announced "claimed by Horde" on a Horde character while an Alliance
+    -- player was watched looting the crate. Read the faction from the player,
+    -- never from the id.
+    [6067] = "claimed",
     [6068] = "claimed",
 }
 

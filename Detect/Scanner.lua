@@ -251,6 +251,16 @@ end
 -- Held with a timestamp because the shard re-rolls when you leave and come
 -- back, and one remembered from the last visit would anchor a timer to a copy
 -- of the zone nobody is standing in.
+-- When this client's own faction was last seen to claim a crate in a zone.
+--
+-- The game draws only your own side's claimed marker, so the marker appearing
+-- means your side took it, and the marker never appearing means the other side
+-- did. The second half is the useful one: without it a crate taken by the
+-- enemy simply vanishes, and the window goes on saying ON THE GROUND to
+-- somebody who would cross a zone for it.
+local claimedByUs = {}
+local CLAIM_MEMORY = 120
+
 local shardSeen = {}
 local SHARD_FRESH = 300
 
@@ -377,6 +387,7 @@ function Scanner.Reset()
     noPosWarned = {}
     zoneWatchSince = {}
     shardChangedAt = {}
+    claimedByUs = {}
     liveCrate = {}
     stopPolling()
 end
@@ -575,10 +586,16 @@ function Scanner.OnVignettesUpdated()
         liveCrate[zoneID] = nil
         local moved = shardChangedAt[zoneID]
             and (stamp - shardChangedAt[zoneID]) < LIVE_STALE * 2
-        ns.Print(("|cffff8800the crate in %s is no longer there|r |cff777777-- nobody was"
-            .. " seen to take it, and %s|r"):format(ns.GetZoneName(zoneID),
-            moved and "|cffff5555this zone re-sharded under you|r"
-                or "the shard has not changed"))
+        local ours = claimedByUs[zoneID] and (stamp - claimedByUs[zoneID]) < CLAIM_MEMORY
+        -- No claim of our own drawn and the zone did not move: what is left is
+        -- the other side taking it. That is the case worth naming, because it
+        -- is the one where the window would otherwise go on saying ON THE
+        -- GROUND to somebody about to cross a zone for nothing.
+        local why = moved and "|cffff5555this zone re-sharded under you|r"
+            or ours and "your side had already claimed it"
+            or "|cffff8800no claim of ours was drawn, so the other side took it|r"
+        ns.Print(("|cffff8800the crate in %s is no longer there|r |cff777777-- %s|r"):format(
+            ns.GetZoneName(zoneID), why))
     end
 
     local guids = C_VignetteInfo.GetVignettes()
@@ -678,14 +695,36 @@ function Scanner.OnVignettesUpdated()
                     else
                         local key = fallKey(zoneID, shard)
                         if stage == "claimed" then
-                            -- Worth one line: it answers the question the
-                            -- silent version of this left open, which is
-                            -- whether the crate was taken or went missing.
-                            if liveCrate[zoneID] then
-                                ns.Print(("|cff777777the crate in %s has been taken|r"):format(
-                                    ns.GetZoneName(zoneID)))
+                            -- Ours, by the only premise that explains seeing
+                            -- the marker at all. Read off the player rather
+                            -- than off which of the two ids arrived: that
+                            -- mapping is a guess and has been contradicted.
+                            local okF, mine = pcall(UnitFactionGroup, "player")
+                            local side = (okF and type(mine) == "string" and mine ~= "")
+                                and mine or "your side"
+                            claimedByUs[zoneID] = stamp
+
+                            -- Not gone. The marker flags which side captured
+                            -- it, and a crate captured by your own side is
+                            -- still there to be looted -- Dmitrii watching it
+                            -- happen, and WarCratePredict saying the same:
+                            -- the atlas can show while the crate is on the
+                            -- ground, which is why their claim used to fire
+                            -- at drop time. Clearing the row here told the
+                            -- player it was over while they could still go
+                            -- and take it.
+                            local live = liveCrate[zoneID] or { zoneID = zoneID }
+                            if not live.mine then
+                                ns.Print(("|cff33ff99the crate in %s is %s|r"
+                                    .. " |cff777777-- still there to take|r"):format(
+                                    ns.GetZoneName(zoneID), side .. "'s"))
                             end
-                            liveCrate[zoneID] = nil
+                            live.mine, live.seen = true, stamp
+                            live.shard = live.shard or shard
+                            live.phase = live.phase or "ground"
+                            live.groundAt = live.groundAt or stamp
+                            live.x, live.y = pos.x, pos.y
+                            liveCrate[zoneID] = live
                         else
                             local live = liveCrate[zoneID] or { zoneID = zoneID }
                             live.shard, live.seen = shard, stamp
@@ -787,7 +826,21 @@ function Scanner.OnVignettesUpdated()
                         -- timer no better than finding the crate on the ground.
                         local source = (stage == "falling" and partialFall[key])
                             and "midfall" or stage
-                        local verdict, _, gap = ns.Timers.Record(db.crates, zoneID, shard, stamp, source)
+
+                        -- A crate already lying there spawned a flight and a
+                        -- fall ago. Dating it to the moment it was noticed is
+                        -- two and a half minutes late for nothing; both legs
+                        -- are measured, so the known part of that error comes
+                        -- off. What is left is how long it lay there, which is
+                        -- why the reading is still not called precise.
+                        local anchorAt, backdated = stamp, nil
+                        if ns.LANDED_STAGE[stage] then
+                            backdated = ns.Airtime.SpawnOffset(db.flight, db.descent, zoneID)
+                            if backdated then anchorAt = stamp - backdated end
+                        end
+
+                        local verdict, _, gap =
+                            ns.Timers.Record(db.crates, zoneID, shard, anchorAt, source)
                         if gap then
                             local noted = ns.Timers.NoteGap(db.gaps, zoneID, gap,
                                 ns.GetZoneInterval(zoneID))
@@ -799,7 +852,7 @@ function Scanner.OnVignettesUpdated()
                         -- on-the-ground position -- the best evidence there is
                         -- -- was discarded whenever the parachute had already
                         -- been seen, which is the common case.
-                        ns.OnCrateSighted(zoneID, shard, stage, pos, verdict)
+                        ns.OnCrateSighted(zoneID, shard, stage, pos, verdict, backdated)
                     end
                 end
             end

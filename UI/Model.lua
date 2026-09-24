@@ -26,11 +26,12 @@ function Model.LiveFor(zoneID, now)
     local live = S and S.LiveCrate and S.LiveCrate(zoneID)
     if live then
         if live.phase == "ground" then
-            return { phase = "ground", since = live.groundAt, rank = 1 }
+            return { phase = "ground", since = live.groundAt, rank = 1,
+                     mine = live.mine, x = live.x, y = live.y }
         end
         local eta = ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, nil, nil, live.since, now)
         return { phase = "falling", toGround = eta and eta.toGround or nil,
-                 since = live.since, rank = 2 }
+                 since = live.since, rank = 2, x = live.x, y = live.y }
     end
     -- Still in the air. Worth a row of its own: a transport on its way is the
     -- reason to stay put, and until now the only sign of one was a line of
@@ -41,7 +42,9 @@ function Model.LiveFor(zoneID, now)
         local eta = r and r.committed
             and ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, r.fit, r.committed, nil, now,
                 ns.db and ns.db.release)
-        return { phase = "inbound", toGround = eta and eta.toGround or nil, rank = 3 }
+        local aim = r and (r.committed or (r.aim and r.aim.spot))
+        return { phase = "inbound", toGround = eta and eta.toGround or nil, rank = 3,
+                 x = aim and aim.x, y = aim and aim.y }
     end
 
     -- Nothing visible from here, but somebody else may be standing in it. A
@@ -55,6 +58,7 @@ function Model.LiveFor(zoneID, now)
         return {
             phase = phase, rank = ns.Remote.RANK[report.stage] or 99,
             since = report.at, toGround = eta and eta.toGround or nil,
+            x = report.x, y = report.y,
             from = report.from, via = report.via,
         }
     end
@@ -255,4 +259,50 @@ function Model.Headline(zoneID, now)
                  ready = false }
     end
     return { text = "transport in the air, not going anywhere", ready = false }
+end
+
+-- One line a raid can act on, for the row somebody clicked.
+--
+-- Pure, so the wording is pinned by tests rather than discovered in a raid.
+-- Core/Comm.lua adds the clickable pin and decides where to send it.
+--
+-- nil when the row has nothing worth saying: announcing "nothing is known
+-- about this zone" to forty people is noise, and the one thing an announcement
+-- must never do is waste the channel it is asking for.
+function Model.Announcement(row)
+    if type(row) ~= "table" or not row.zoneID then return nil end
+    local where = ns.GetZoneName(row.zoneID)
+    local shard = row.shardID and ("  shard %s"):format(tostring(row.shardID)) or ""
+    local live = row.live
+
+    local function clock(seconds)
+        return (ns.FormatClock(seconds):gsub("^%s+", ""))
+    end
+
+    -- Never echo the raid back at itself. A report carried by RCT arrived as a
+    -- raid warning, so everyone has already read it; repeating it is spam
+    -- dressed as help. Reports that came over an addon channel are invisible
+    -- to anyone without that addon, so those are worth saying out loud.
+    if live and live.via == "RCT" then return nil end
+
+    if live then
+        local at = (live.x and live.y)
+            and (" at %.1f, %.1f"):format(live.x * 100, live.y * 100) or ""
+        if live.phase == "ground" then
+            return ("%s: crate ON THE GROUND%s%s"):format(where, at, shard)
+        end
+        if live.phase == "falling" then
+            return ("%s: crate landing in %s%s%s"):format(where,
+                live.toGround and clock(live.toGround) or "moments", at, shard)
+        end
+        return ("%s: transport in the air%s%s%s"):format(where,
+            live.toGround and (", down in " .. clock(live.toGround)) or "", at, shard)
+    end
+
+    if row.remaining then
+        return ("%s: transport in %s, lootable in %s%s"):format(where,
+            clock(row.remaining),
+            row.onGround and clock(row.onGround) or "?", shard)
+    end
+    return nil
 end
