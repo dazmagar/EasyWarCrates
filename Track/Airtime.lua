@@ -275,6 +275,28 @@ function Airtime.Flight(store, zoneID)
     return typical, n, lo, hi, over, part, source
 end
 
+-- How long ago a crate found lying on the ground actually spawned.
+--
+-- Both legs are measured now, so a crate on the ground is known to have left
+-- its transport a descent ago and to have spawned a flight before that.
+-- Seeding the timer at the moment somebody noticed it throws all of that away
+-- and dates the spawn two and a half minutes late, every time.
+--
+-- What this cannot know is how long it lay there before anybody looked. So the
+-- reading stays imprecise: the adjustment removes the part of the error that
+-- is known and leaves the part that is not. RCT does the same thing and calls
+-- it a spawn offset.
+--
+-- nil unless both legs rest on readings rather than the shipped guess. Built
+-- from two guesses the correction would be a guess in a correction's clothes,
+-- and it would move every timer without anybody having measured anything.
+function Airtime.SpawnOffset(flightStore, descentStore, zoneID)
+    local flight, fn, _, _, _, _, fsrc = Airtime.Flight(flightStore, zoneID)
+    local descent, dn, _, _, _, _, dsrc = Airtime.Descent(descentStore, zoneID)
+    if fsrc == "guess" or dsrc == "guess" then return nil end
+    return flight + descent, fn + dn
+end
+
 -- How wrong the raw release estimate runs, pooled across zones.
 --
 -- This started as a correction for what looked like a constant bias: the first

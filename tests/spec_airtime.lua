@@ -386,3 +386,36 @@ t.test("a cluster is a cluster wherever it sits, not only near 86", function()
     t.eq(typical, 122, "the estimator finds agreement, it does not assume the answer")
     t.eq(n, 3)
 end)
+
+-- A crate found lying on the ground spawned a flight and a fall ago. Seeding
+-- the timer at the moment somebody noticed it is late by that much, every
+-- time, and both legs are measured now.
+t.test("a grounded find is set back by the two measured legs", function()
+    local flight, descent = {}, {}
+    for _, secs in ipairs({ 70, 72, 74 }) do Airtime.NoteFlight(flight, ZONE, secs) end
+    for _, secs in ipairs({ 86, 86, 87 }) do Airtime.NoteDescent(descent, ZONE, secs) end
+    local back, n = Airtime.SpawnOffset(flight, descent, ZONE)
+    t.eq(back, 158, "72 in the air and 86 under the parachute")
+    t.eq(n, 6, "and it rests on six readings")
+end)
+
+-- Built from two guesses it would move every timer on the strength of nothing.
+t.test("nothing is set back until both legs have actually been measured", function()
+    local flight, descent = {}, {}
+    t.eq(Airtime.SpawnOffset(flight, descent, ZONE), nil, "neither leg measured")
+
+    for _, secs in ipairs({ 86, 86, 87 }) do Airtime.NoteDescent(descent, ZONE, secs) end
+    t.eq(Airtime.SpawnOffset(flight, descent, ZONE), nil, "the fall alone is not enough")
+
+    Airtime.NoteFlight(flight, ZONE, 72)
+    t.ok(Airtime.SpawnOffset(flight, descent, ZONE), "one flight reading is still a reading")
+end)
+
+t.test("a leg borrowed from other zones still counts as measured", function()
+    local flight, descent = {}, {}
+    for _, secs in ipairs({ 14, 43, 130 }) do Airtime.NoteDescent(descent, "ES", secs) end
+    for _, secs in ipairs({ 86, 86, 87 }) do Airtime.NoteDescent(descent, "HA", secs) end
+    for _, secs in ipairs({ 70, 72, 74 }) do Airtime.NoteFlight(flight, "ES", secs) end
+    local back = Airtime.SpawnOffset(flight, descent, "ES")
+    t.eq(back, 158, "Eversong disagrees with itself, so it borrows 86 and says so elsewhere")
+end)
