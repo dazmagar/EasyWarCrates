@@ -38,6 +38,37 @@ Phase.UNKNOWN_DRIFT = UNKNOWN_DRIFT
 local KEEP = 7 * 24 * 3600
 Phase.KEEP = KEEP
 
+-- How far the anchor itself may be out, before a single cycle is extrapolated.
+-- Drift answers how well the cycle LENGTH is known; this answers how well its
+-- STARTING POINT was, and the two are independent.
+--
+-- A mid-fall join is why this exists. It looks like a falling sighting and is
+-- worth nothing like one: the crate left the transport an unknown time
+-- earlier. Three of four descents on 24 Sep were mid-fall joins, so most of
+-- what the memory holds is anchored this way, and every one of them was being
+-- reported to two seconds.
+--
+-- The back-computed sources share a figure because they share a cause: each
+-- subtracts an assumed descent from when it was found, and the descent
+-- readings run 79 to 134, so the assumption can be most of a minute out.
+local ANCHOR_ERROR = {
+    yell     = 3,
+    flying   = 5,
+    falling  = 10,
+    midfall  = 45,
+    ground   = 45,
+    claimed  = 45,
+    anchor   = 45,   -- somebody else's, offered without saying how they got it
+    manual   = 45,
+}
+local ANCHOR_UNKNOWN = 45
+Phase.ANCHOR_ERROR = ANCHOR_ERROR
+Phase.ANCHOR_UNKNOWN = ANCHOR_UNKNOWN
+
+function Phase.AnchorError(source)
+    return ANCHOR_ERROR[source] or ANCHOR_UNKNOWN
+end
+
 function Phase.New()
     return {}
 end
@@ -95,6 +126,7 @@ function Phase.Recall(store, zoneID, shardID, interval, now, drift, tolerance)
 
     local cycles = math.floor(elapsed / interval)
     local error = cycles * (tonumber(drift) or UNKNOWN_DRIFT)
+        + Phase.AnchorError(held.source)
     if error > (tonumber(tolerance) or TOLERANCE) then
         return nil, "drifted too far", cycles, error
     end
@@ -123,7 +155,11 @@ function Phase.Absorb(store, crates)
     local kept = 0
     for zoneID, shards in pairs(crates or {}) do
         for shardID, entry in pairs(shards) do
-            if entry.ts and Phase.Remember(store, zoneID, shardID, entry.ts, entry.source) then
+            -- "memory" is skipped, not because it is worthless, but because
+            -- it came from here: re-filing it would relabel whatever
+            -- originally anchored it as something with no anchor error.
+            if entry.ts and entry.source ~= "memory"
+                and Phase.Remember(store, zoneID, shardID, entry.ts, entry.source) then
                 kept = kept + 1
             end
         end

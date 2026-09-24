@@ -39,13 +39,13 @@ t.test("a phase extrapolated too far is refused rather than shown", function()
 
     local ts, why, cycles, err = Phase.Recall(store, ZA, 1, INTERVAL, T0 + INTERVAL * 10, 4)
     t.eq(ts, T0, "ten cycles at four seconds is forty out, which is still useful")
-    t.eq(err, 40)
+    t.eq(err, 43, "plus the three the yell that anchored it was worth")
 
     ts, why, cycles, err = Phase.Recall(store, ZA, 1, INTERVAL, T0 + INTERVAL * 40, 4)
     t.eq(ts, nil)
     t.eq(why, "drifted too far")
     t.eq(cycles, 40)
-    t.eq(err, 160, "and the refusal still says how far out it would have been")
+    t.eq(err, 163, "and the refusal still says how far out it would have been")
 end)
 
 t.test("a shakier interval is trusted across fewer cycles", function()
@@ -137,4 +137,38 @@ t.test("a recalled phase carries how it was anchored in the first place", functi
     Phase.Remember(store, ZA, 1, T0, "yell")
     local _, _, _, _, source = Phase.Recall(store, ZA, 1, INTERVAL, T0 + 60, 4)
     t.eq(source, "yell")
+end)
+
+-- Drift is how well the cycle LENGTH is known. It says nothing about how well
+-- its starting point was, and on 24 Sep three of four descents were mid-fall
+-- joins -- so most of what the memory held was anchored by the weakest source
+-- there is and reported to two seconds.
+t.test("how the anchor was obtained is part of how wrong it can be", function()
+    local store = Phase.New()
+    Phase.Remember(store, ZA, 1, T0, "yell")
+    Phase.Remember(store, ZA, 2, T0, "midfall")
+
+    local _, _, _, sharp = Phase.Recall(store, ZA, 1, INTERVAL, T0 + INTERVAL * 4, 1)
+    local _, _, _, vague = Phase.Recall(store, ZA, 2, INTERVAL, T0 + INTERVAL * 4, 1)
+    t.lt(sharp, vague, "same zone, same age, and only one of them is worth a countdown")
+    t.eq(vague - sharp, Phase.AnchorError("midfall") - Phase.AnchorError("yell"))
+end)
+
+t.test("an anchor of no known kind is assumed to be a bad one", function()
+    t.eq(Phase.AnchorError("something later than this code"), Phase.ANCHOR_UNKNOWN)
+    t.eq(Phase.AnchorError(nil), Phase.ANCHOR_UNKNOWN)
+end)
+
+-- A recalled phase goes back into the timers as "memory". Absorbing that would
+-- file it as freshly anchored by nothing in particular, and the mid-fall join
+-- it actually came from would be laundered into a clean reading.
+t.test("a phase that came from the memory is not filed back into it", function()
+    local store, crates = Phase.New(), Timers.New()
+    Phase.Remember(store, HA, 7, T0, "midfall")
+    Timers.Record(crates, HA, 7, T0, "memory")
+    Timers.Record(crates, HA, 8, T0, "yell")
+    t.eq(Phase.Absorb(store, crates), 1, "only the yell is new information")
+
+    local _, _, _, err = Phase.Recall(store, HA, 7, INTERVAL, T0, 1)
+    t.eq(err, Phase.AnchorError("midfall"), "and it is still known to be a mid-fall join")
 end)
