@@ -354,7 +354,10 @@ local function noteStranger(info, guid, zoneID, pos, stamp)
     local where = rec.zones[zoneID]
     if not where then where = { n = 0, seen = {} }; rec.zones[zoneID] = where end
     where.n = where.n + 1
-    if pos then where.x, where.y = pos.x, pos.y end
+    -- Only a position that resolved on this zone's own map, the same guard the
+    -- crate path uses: a vignette can report against a different map and the
+    -- coordinates then point somewhere the player is not.
+    if pos then where.x, where.y = pos.x, pos.y else where.noPos = (where.noPos or 0) + 1 end
     where.seen[#where.seen + 1] = { at = stamp, shard = ns.Shard.FromVignetteGUID(guid) }
     while #where.seen > STRANGER_SEEN do table.remove(where.seen, 1) end
 end
@@ -772,7 +775,8 @@ function Scanner.OnVignettesUpdated()
 
         local stage = info and ns.VignetteStage(info.vignetteID)
         if info and not stage then
-            noteStranger(info, guid, zoneID, vignettePosition(guid, zoneID, rawMap), stamp)
+            local sPos, sMap = vignettePosition(guid, zoneID, rawMap)
+            noteStranger(info, guid, zoneID, sMap == zoneID and sPos or nil, stamp)
         end
         if stage then
             local pos, posMap = vignettePosition(guid, zoneID, rawMap)
