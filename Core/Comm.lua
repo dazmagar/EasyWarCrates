@@ -334,6 +334,25 @@ end
 local CLICK_COOLDOWN = 15
 local lastClick = {}
 
+-- Where a click would put it, and the phrase for saying so before it is
+-- clicked. One function, because the tooltip promising one thing and the send
+-- doing another is worse than either.
+--
+-- The click is deliberately not gated on db.announce or on being privileged,
+-- unlike the automatic announce: the setting governs an addon speaking by
+-- itself, and a click is the player choosing to. Which is exactly why the
+-- tooltip has to name the channel. "Your group" reads mild and RAID chat in
+-- somebody else's raid is twenty strangers.
+function Comm.RowChannel()
+    if not IsInGroup() then return nil, "you are not in a group" end
+    if not IsInRaid() then return "PARTY", "party chat" end
+    local role = Comm.Role()
+    if role == "leader" or role == "assist" then
+        return "RAID_WARNING", "a raid warning"
+    end
+    return "RAID", "raid chat"
+end
+
 function Comm.AnnounceRow(row)
     if type(row) ~= "table" then return "nothing" end
     local text = ns.Model.Announcement(row, GetServerTime())
@@ -352,11 +371,7 @@ function Comm.AnnounceRow(row)
         if ok and link then text = text .. " " .. link end
     end
 
-    local channel = "PARTY"
-    if IsInRaid() then
-        local role = Comm.Role()
-        channel = (role == "leader" or role == "assist") and "RAID_WARNING" or "RAID"
-    end
+    local channel = Comm.RowChannel()
     pcall(SendChatMessage, text, channel)
     return "sent", channel
 end

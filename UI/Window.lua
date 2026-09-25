@@ -113,7 +113,9 @@ local function makeRow(parent, index)
                 1, 0.5, 0.3, true)
         end
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Left-click to say this to your group", 0.6, 0.6, 0.6)
+        local _, where = ns.Comm and ns.Comm.RowChannel()
+        GameTooltip:AddLine(where and ("Left-click to post this to " .. where)
+            or "Left-click to post this -- you are not in a group", 0.6, 0.6, 0.6)
         if (d.missed or 0) > 0 then
             GameTooltip:AddLine(("%d cycle%s have passed here unobserved. If the shard changed "
                 .. "in that time this timer means nothing."):format(
