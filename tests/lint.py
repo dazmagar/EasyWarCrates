@@ -64,6 +64,7 @@ def check_file(path: pathlib.Path) -> list[str]:
 
     problems = []
     problems += mixed_clocks(path, stripped)
+    problems += read_before_declared(path, stripped)
     for m in CALL.finditer(stripped):
         name = m.group(1)
         if name not in declared:
@@ -221,4 +222,45 @@ def stale_call_sites(root: pathlib.Path, files: list[str]) -> list[str]:
                         f"takes {len(params[key])} and whose '{arg}' is argument "
                         f"{params[key].index(arg) + 1}"
                     )
+    return problems
+
+
+# Only file-scope locals: no leading whitespace. A name declared inside some
+# function is a different name, and treating it as this one is how a rule like
+# this starts crying wolf.
+DECL_TOP = re.compile(r"^local\s+(?:function\s+)?([A-Za-z_]\w*)", re.M)
+WORD = re.compile(r"(?<![\w.:])([A-Za-z_]\w*)")
+
+
+def read_before_declared(path: pathlib.Path, stripped: str) -> list[str]:
+    """A file-scope local READ above the line that declares it.
+
+    The rule above catches it being called. Reading it is the same bug and was
+    not caught: liveSpectral was declared beside the table it belongs with, six
+    hundred lines below the function that iterates it, and pairs(liveSpectral)
+    is a call to pairs with a nil global as its argument. Tests green, lint
+    green, deploy green, and /ewc show dead.
+
+    Scoped to declarations at file level on purpose, and only to names this file
+    declares at all -- anything else is a global, which may legitimately be a
+    WoW API that happens to share the name.
+    """
+    declared = {}
+    for m in DECL_TOP.finditer(stripped):
+        ln = line_of(stripped, m.start())
+        declared[m.group(1)] = min(declared.get(m.group(1), ln), ln)
+
+    problems, seen = [], set()
+    for m in WORD.finditer(stripped):
+        name = m.group(1)
+        if name not in declared:
+            continue
+        ln = line_of(stripped, m.start())
+        if ln >= declared[name] or (name, ln) in seen:
+            continue
+        seen.add((name, ln))
+        problems.append(
+            f"{path.name}:{ln} reads '{name}', whose file-scope local is declared at "
+            f"line {declared[name]} -- until that line it is a nil global"
+        )
     return problems

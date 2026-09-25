@@ -112,10 +112,29 @@ local function makeRow(parent, index)
                 .. "so the cycle is right but its phase is only as good as when it was spotted",
                 1, 0.5, 0.3, true)
         end
+        if d.spectral then
+            local ago = GetServerTime() - (d.spectral.since or GetServerTime())
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine(("A Spectral Battle Chest has been on the ground here for %s.")
+                :format((ns.FormatClock(ago):gsub("^%s+", ""))), 0.8, 0.55, 1, true)
+            if d.spectral.x then
+                GameTooltip:AddLine(("  at %.1f, %.1f"):format(
+                    d.spectral.x * 100, d.spectral.y * 100), 0.7, 0.7, 0.7)
+            end
+            GameTooltip:AddLine("Not a war crate: it arrives without a transport and stays "
+                .. "a minute or two, so it is worth reaching only from inside the zone.",
+                0.6, 0.6, 0.6, true)
+        end
         GameTooltip:AddLine(" ")
-        local _, where = ns.Comm and ns.Comm.RowChannel()
-        GameTooltip:AddLine(where and ("Left-click to post this to " .. where)
-            or "Left-click to post this -- you are not in a group", 0.6, 0.6, 0.6)
+        -- Only when there is something to post. A row can exist for the chest
+        -- alone, and a click on that has nothing to say -- promising one is the
+        -- same fault as not naming the channel was.
+        local sayable = ns.Model.Announcement and ns.Model.Announcement(d, GetServerTime())
+        local _, where = sayable and ns.Comm and ns.Comm.RowChannel()
+        if sayable then
+            GameTooltip:AddLine(where and ("Left-click to post this to " .. where)
+                or "Left-click to post this -- you are not in a group", 0.6, 0.6, 0.6)
+        end
         if (d.missed or 0) > 0 then
             GameTooltip:AddLine(("%d cycle%s have passed here unobserved. If the shard changed "
                 .. "in that time this timer means nothing."):format(
@@ -138,7 +157,11 @@ local function paintRow(r, row, isNext)
 
     local mark = isNext and "|cff33ff99>|r " or "  "
     local shard = row.shardID and ("|cff777777%s|r"):format(row.shardID) or ""
-    r.left:SetText(("%s|cffffffff%s|r %s"):format(mark, row.abbr, shard))
+    -- Beside the shard rather than in the countdown column: the chest is a
+    -- separate thing that happens to be in the same copy of the same zone, and
+    -- the countdown belongs to the crate.
+    local spectral = row.spectral and " |cffcc88ffspectral|r" or ""
+    r.left:SetText(("%s|cffffffff%s|r %s%s"):format(mark, row.abbr, shard, spectral))
 
     if row.live then
         -- The crate that is there NOW, in place of the countdown to the next.

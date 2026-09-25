@@ -30,6 +30,33 @@ local STAGE = {
 
 ns.VIGNETTE_STAGE = STAGE
 
+-- A different object entirely, and deliberately not in STAGE above: it is not
+-- a crate and nothing that reasons about crates should mistake it for one.
+--
+-- Spectral Battle Chest. Dmitrii's account, from every time he has met one:
+-- it simply appears on the ground -- no transport, no parachute -- its vignette
+-- is visible from anywhere in Slayer's Rise rather than needing proximity, and
+-- it stays about one to two minutes.
+--
+-- Each of those changes what tracking means. Nothing flies, so there is no
+-- heading to fit and no release to time. Zone-wide visibility means one player
+-- standing in the zone sees every spawn, so its cycle is measurable in an
+-- evening without flying a route. One to two minutes is long enough to reach
+-- if you are already there and too short to be worth telling anyone who is
+-- not. So: notice it, say where, and count it down. Nothing more.
+--
+-- Untracked by RCT, WarCrateTracker and CrateTrackerZK alike, so this id has
+-- one source and /ewc scan is how it gets checked.
+local SPECTRAL = {
+    [6892] = true,
+}
+
+ns.SPECTRAL = SPECTRAL
+
+function ns.IsSpectral(vignetteID)
+    return SPECTRAL[vignetteID] == true
+end
+
 function ns.VignetteStage(vignetteID)
     return STAGE[vignetteID]
 end

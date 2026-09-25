@@ -112,6 +112,12 @@ local DESCENT_PAIR_MAX = 300
 -- useless; this is what the player actually wants at that moment.
 local liveCrate = {}
 
+-- The Spectral Battle Chest on the ground, per zone. Kept apart from liveCrate
+-- because the two share nothing: no stages, no transport, no descent. Declared
+-- here because Scanner.ActiveZones reads it a few lines below, and a local read
+-- above its own declaration is a nil global -- which is how this shipped once.
+local liveSpectral = {}
+
 -- Stop showing a crate nobody has seen for this long while standing in its
 -- zone. It has been taken, or it was never really there.
 local LIVE_STALE = 90
@@ -137,7 +143,28 @@ function Scanner.ActiveZones()
     for zoneID in pairs(liveCrate) do
         if Scanner.LiveCrate(zoneID) then out[zoneID] = true end
     end
+    -- A chest with no crate timer beside it still earns the zone a row. It
+    -- lasts a minute or two, so a row that appears only once something else
+    -- happens to be timed there would miss most of them.
+    for zoneID in pairs(liveSpectral) do
+        if Scanner.Spectral(zoneID) then out[zoneID] = true end
+    end
     return out
+end
+
+-- The Spectral Battle Chest on the ground in this zone, or nil.
+--
+-- A short grace, unlike a crate's: this vignette is drawn zone-wide rather
+-- than by proximity, so it not being there is a real answer rather than the
+-- player having flown out of range.
+function Scanner.Spectral(zoneID)
+    local live = liveSpectral[zoneID]
+    if not live then return nil end
+    if GetServerTime() - (live.seen or 0) > GONE_GRACE then
+        liveSpectral[zoneID] = nil
+        return nil
+    end
+    return live
 end
 
 function Scanner.LiveCrate(zoneID)
@@ -469,6 +496,7 @@ function Scanner.Reset()
     releaseLag = {}
     fallAtlas, atlasFlip = {}, {}
     strangerGUID = {}
+    liveSpectral = {}
     lastSweptStamp, lastFalling = {}, {}
     noPosWarned = {}
     zoneWatchSince = {}
@@ -776,7 +804,23 @@ function Scanner.OnVignettesUpdated()
         local stage = info and ns.VignetteStage(info.vignetteID)
         if info and not stage then
             local sPos, sMap = vignettePosition(guid, zoneID, rawMap)
-            noteStranger(info, guid, zoneID, sMap == zoneID and sPos or nil, stamp)
+            local usablePos = sMap == zoneID and sPos or nil
+            -- Filed whether or not it is recognised: the record is what
+            -- measures its cycle, and being able to draw a marker for it is no
+            -- reason to stop learning when it comes back.
+            noteStranger(info, guid, zoneID, usablePos, stamp)
+            if ns.IsSpectral(info.vignetteID) then
+                local live = liveSpectral[zoneID] or { zoneID = zoneID, since = stamp }
+                live.seen, live.shard = stamp, ns.Shard.FromVignetteGUID(guid) or live.shard
+                if usablePos then live.x, live.y = usablePos.x, usablePos.y end
+                if not liveSpectral[zoneID] then
+                    ns.Print(("|cffcc88ff%s -- %s on the ground|r%s"):format(
+                        ns.GetZoneName(zoneID), tostring(info.name or "spectral chest"),
+                        usablePos and (" |cffffd100at %.1f, %.1f|r"):format(
+                            usablePos.x * 100, usablePos.y * 100) or ""))
+                end
+                liveSpectral[zoneID] = live
+            end
         end
         if stage then
             local pos, posMap = vignettePosition(guid, zoneID, rawMap)

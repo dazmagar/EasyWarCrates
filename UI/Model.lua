@@ -174,6 +174,10 @@ function Model.BuildRows(db, route, now)
             guessedShard = (not known and entry ~= nil) or nil,
             shardFrom  = shardFrom,
             live      = live,
+            -- A second object in the same zone, not a stage of the first. It
+            -- rides on the row instead of taking one of its own because a zone
+            -- can have both, and two rows for one place is the RCT complaint.
+            spectral  = (ns.Scanner and ns.Scanner.Spectral and ns.Scanner.Spectral(zoneID)) or nil,
             zoneID    = zoneID,
             abbr      = ns.GetZoneAbbr(zoneID),
             shardID   = shardID,
