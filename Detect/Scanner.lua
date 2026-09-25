@@ -660,13 +660,20 @@ function Scanner.OnVignettesUpdated()
         liveCrate[zoneID] = nil
         local moved = shardChangedAt[zoneID]
             and (stamp - shardChangedAt[zoneID]) < LIVE_STALE * 2
-        local ours = claimedByUs[zoneID] and (stamp - claimedByUs[zoneID]) < CLAIM_MEMORY
         -- How long it stayed after our side claimed it. Nobody has measured
-        -- this, so it is collected before it is ever shown. Dated from the
-        -- last sighting rather than from now: the grace above is this client
-        -- waiting, not the crate lying there.
+        -- this, so it is collected before it is ever shown.
+        --
+        -- Dated from the last sighting throughout, and that "throughout" is
+        -- the fix. The grace above is this client waiting, not the crate lying
+        -- there, and asking from now instead cost this store every reading it
+        -- was built to hold: a claimed crate is not believed gone for
+        -- LIVE_STALE (90s) and the claim was only allowed to be CLAIM_MEMORY
+        -- (120s) old, so a marker had to vanish within thirty seconds of the
+        -- claim to count at all -- while whether it outlasts the claim is the
+        -- entire question. Empty for days, and nothing said so.
+        local lingered = claimedByUs[zoneID] and ((lost.seen or stamp) - claimedByUs[zoneID])
+        local ours = lingered ~= nil and lingered < CLAIM_MEMORY
         if ours then
-            local lingered = (lost.seen or stamp) - claimedByUs[zoneID]
             if ns.Airtime.NoteLinger(db.linger, zoneID, lingered) then
                 ns.Debug(("claimed crate in %s lasted %ds"):format(
                     ns.GetZoneAbbr(zoneID), math.floor(lingered + 0.5)))

@@ -281,6 +281,17 @@ end
 HANDLERS.comm = function()
     ns.Print(("you are %s; sharing is %s"):format(
         ns.Comm.Role(), ns.db.share and "|cff33ff99on|r" or "|cffff8800off|r"))
+
+    local unknown = {}
+    for name, held in pairs(ns.db.unknownZones or {}) do
+        unknown[#unknown + 1] = ("%s (x%d, last from %s)"):format(name, held.n, tostring(held.from))
+    end
+    if #unknown > 0 then
+        table.sort(unknown)
+        ns.Print(("|cffff8800zone names heard that this client cannot resolve:|r %s"):format(
+            table.concat(unknown, ", ")))
+        ns.Print("|cff777777their reports are being dropped. Send this line on.|r")
+    end
     -- Registration, checked rather than assumed. A client can hold only so
     -- many prefixes across every addon installed, so asking for one is not the
     -- same as having it, and a refusal is silent. Without this, "nobody is

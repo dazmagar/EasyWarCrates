@@ -22,6 +22,13 @@ local DEFAULTS = {
     phase     = nil,    -- where each shard's cycle sits, outliving Prune
     descent   = nil,    -- measured parachute times, per zone
     release   = nil,    -- how wrong the release-time estimate runs, per zone
+    -- Zone names heard in a chat alert that this client cannot resolve. RCT
+    -- broadcasts the sender's own localised name, and the game will only tell
+    -- us our locale's, so a German raider's "Leerensturm" is unreadable on an
+    -- English client. Kept because they are the only source of the mapping
+    -- there is: nothing ships these names and inventing them is worse than
+    -- not having them.
+    unknownZones = nil,
     -- Tell the group what this client sees. Receiving needs no switch:
     -- hearing costs nothing and never touches the saved timers.
     share       = true,
@@ -81,6 +88,7 @@ local function applyDefaults(db)
     db.linger  = db.linger or {}
     db.phase   = db.phase or ns.Phase.New()
     db.release = db.release or {}
+    db.unknownZones = db.unknownZones or {}
     db.log     = db.log or {}
     -- Deliberately not on db. db IS the saved table, so a store hung off
     -- it is a store written to disk, and what other players reported must

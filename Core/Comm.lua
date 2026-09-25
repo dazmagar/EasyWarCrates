@@ -227,6 +227,14 @@ function Comm.OnChat(text, sender, channel)
     local report, unresolved = ns.Remote.FromAlert(text, sender, zoneNames(), GetServerTime())
     if report then return take(report, channel) end
     if unresolved then
+        -- Filed, not just logged. The log is a 400-line ring and these arrive
+        -- in raids only, so a name that scrolls off is a name lost.
+        local seen = ns.db.unknownZones
+        if seen then
+            local held = seen[unresolved] or { n = 0, first = GetServerTime() }
+            held.n, held.last, held.from = held.n + 1, GetServerTime(), sender
+            seen[unresolved] = held
+        end
         log({ via = "RCT", from = sender, channel = channel, verdict = "unknown zone",
               text = ("said a crate is flying in %q, which is not a zone this client knows")
                   :format(unresolved) })
