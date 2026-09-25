@@ -348,7 +348,20 @@ Airtime.BIAS_MIN_N = BIAS_MIN_N
 
 -- mean, n, spread (max error minus min) -- the spread is what says how much to
 -- trust the mean.
-function Airtime.ReleaseBias(store)
+--
+-- A zone's own readings win once it has enough of them, and pooling is the
+-- fallback. This was the other way round on the stated grounds that the cause
+-- is not zone-specific. It is: 98 observations put Zul'Aman at +18s and
+-- Slayer's Rise at +42s, and Zul'Aman's own 26 readings span only ten seconds,
+-- so its figure is well determined and was being pulled eight seconds wide by
+-- zones it has nothing to do with.
+function Airtime.ReleaseBias(store, zoneID)
+    local own = zoneID and store and store[zoneID]
+    if own and (own.n or 0) >= BIAS_MIN_N then
+        return own.sum / own.n, own.n,
+            (own.lo and own.hi) and (own.hi - own.lo) or nil
+    end
+
     local n, sum, lo, hi = 0, 0, nil, nil
     for _, acc in pairs(store or {}) do
         n = n + (acc.n or 0)
@@ -399,7 +412,7 @@ function Airtime.ETA(store, zoneID, fit, target, fallingSince, now, releaseStore
 
     local raw = Airtime.ToRelease(fit, target)
     if not raw then return nil end
-    local bias, biasN = Airtime.ReleaseBias(releaseStore)
+    local bias, biasN = Airtime.ReleaseBias(releaseStore, zoneID)
     local toRelease = raw + bias
     if toRelease < 0 then toRelease = 0 end
     return {

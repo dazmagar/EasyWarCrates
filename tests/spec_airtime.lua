@@ -160,8 +160,9 @@ t.test("too few samples is not enough to correct by", function()
     t.eq(eta.biasN, Airtime.BIAS_MIN_N - 1)
 end)
 
--- Pooled across zones: the cause is not zone-specific and the samples are few,
--- so splitting by zone would only be slower to learn the same number.
+-- Pooling is the fallback now, not the rule: see the zone-specific tests at the
+-- end. It still applies when a zone has too few readings of its own, because a
+-- bad figure from five zones beats no figure at all.
 t.test("bias pools observations from every zone", function()
     local bias = {
         [2444] = { n = 3, sum = 22 + 29 + 31, lo = 22, hi = 31 },
@@ -443,4 +444,57 @@ t.test("a reading outside anything plausible is refused", function()
     t.eq(Airtime.NoteLinger(store, ZONE, 1), nil, "a crate does not last one second")
     t.eq(Airtime.NoteLinger(store, ZONE, 4000), nil)
     t.eq(Airtime.NoteLinger(nil, ZONE, 100), nil)
+end)
+
+
+-- The pooling above was chosen on the stated grounds that the cause is not
+-- zone-specific. 98 observations say otherwise: Zul'Aman +18s, Eversong +21s,
+-- Harandar +30s, Voidstorm +33s, Slayer's Rise +42s. Zul'Aman's own 26 readings
+-- span ten seconds, so its figure is well determined, and the pooled +26s was
+-- eight seconds wrong on the best-measured zone in the set.
+t.test("a zone with enough readings of its own does not borrow anyone else's", function()
+    -- Dmitrii's 98 readings, as saved on 24 Sep.
+    local store = {
+        [2444] = { n = 9,  sum = 9 * 41.8,  lo = 13, hi = 57 },   -- Slayer's Rise
+        [2405] = { n = 21, sum = 21 * 33.1, lo = 12, hi = 85 },   -- Voidstorm
+        [2413] = { n = 12, sum = 12 * 30.2, lo = 15, hi = 49 },   -- Harandar
+        [2395] = { n = 30, sum = 30 * 20.9, lo = -3, hi = 45 },   -- Eversong Woods
+        [2437] = { n = 26, sum = 26 * 17.9, lo = 14, hi = 24 },   -- Zul'Aman
+    }
+    local pooled, pooledN = Airtime.ReleaseBias(store)
+    t.eq(pooledN, 98)
+    t.near(pooled, 25.8, 0.05, "what every zone was getting")
+
+    local za, zaN, zaSpread = Airtime.ReleaseBias(store, 2437)
+    t.near(za, 17.9, 1e-6, "its own mean, not the pooled one")
+    t.eq(zaN, 26)
+    t.eq(zaSpread, 10, "and its own spread, which is what says to trust it")
+    t.near(Airtime.ReleaseBias(store, 2444), 41.8, 1e-6)
+    t.ok(math.abs(za - pooled) > 7, "the difference is worth the change")
+end)
+
+t.test("a zone short of readings still borrows the pool", function()
+    local store = {
+        [2437] = { n = 20, sum = 20 * 18, lo = 14, hi = 24 },
+        [2413] = { n = Airtime.BIAS_MIN_N - 1, sum = 4 * 60, lo = 55, hi = 65 },
+    }
+    local mean, n = Airtime.ReleaseBias(store, 2413)
+    t.near(mean, (20 * 18 + 4 * 60) / 24, 1e-6, "pooled, because four is not enough to stand on")
+    t.eq(n, 24)
+end)
+
+t.test("a zone nobody has timed borrows the pool", function()
+    local store = { [2437] = { n = 20, sum = 20 * 18, lo = 14, hi = 24 } }
+    t.near(Airtime.ReleaseBias(store, 9999), 18, 1e-6)
+    t.eq(Airtime.ReleaseBias({}, 2437), 0, "and with nothing anywhere, no correction at all")
+end)
+
+t.test("the correction the window applies is the zone's own", function()
+    local store = {
+        [ZONE]   = { n = 10, sum = 10 * 12, lo = 10, hi = 15 },
+        [999999] = { n = 40, sum = 40 * 50, lo = 40, hi = 60 },
+    }
+    local eta = Airtime.ETA({}, ZONE, fit(0.20, 0.50, 1, 0), { x = 0.55, y = 0.50 }, nil, T0, store)
+    t.near(eta.bias, 12, 1e-6, "not the 42 the pool would have given")
+    t.near(eta.toRelease, 50 + 12, 1e-6)
 end)
