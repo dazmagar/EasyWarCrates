@@ -37,17 +37,23 @@ LINE_COMMENT = re.compile(r"--[^\n]*")
 QUOTED = re.compile(r'"(?:\\.|[^"\\\n])*"' r"|'(?:\\.|[^'\\\n])*'")
 
 
-def check_file(path: pathlib.Path) -> list[str]:
-    text = path.read_text(encoding="utf-8")
+def strip_code(text: str) -> str:
+    """Everything that is not code, blanked out, line numbers intact.
 
-    # Blank out anything that is not code. String literals matter as much as
-    # comments here: a format string like "%s (%d)" otherwise reads as a call
-    # to a function named s, which this tool duly reported against Main.lua.
-    # A linter that cries wolf gets switched off, and then it is worth nothing.
+    String literals matter as much as comments: a format string like "%s (%d)"
+    otherwise reads as a call to a function named s, which this tool duly
+    reported against Main.lua. A linter that cries wolf gets switched off, and
+    then it is worth nothing.
+    """
     stripped = blank_out(text, BLOCK_COMMENT)
     stripped = blank_out(stripped, LONG_STR)
     stripped = blank_out(stripped, LINE_COMMENT)
-    stripped = blank_out(stripped, QUOTED)
+    return blank_out(stripped, QUOTED)
+
+
+def check_file(path: pathlib.Path) -> list[str]:
+    text = path.read_text(encoding="utf-8")
+    stripped = strip_code(text)
 
     declared: dict[str, int] = {}
     for pattern in (DECL_FUNC, DECL_VAR):
@@ -146,8 +152,73 @@ def main(root: pathlib.Path, files: list[str]) -> int:
     problems = []
     for rel in files:
         problems += check_file(root / rel)
+    problems += stale_call_sites(root, files)
     for p in problems:
         print("LINT  " + p)
     if not problems:
-        print(f"ok   lint                       {len(files)} files, no use-before-declare")
+        print(f"ok   lint                       {len(files)} files, no use-before-declare, no stale call sites")
     return len(problems)
+
+
+DEF_METHOD = re.compile(r"^function\s+([A-Z]\w*)\.(\w+)\s*\(([^)]*)\)", re.M)
+CALL_METHOD = re.compile(r"(?<![\w.])(?:ns\.)?([A-Z]\w*)\.(\w+)\s*\(")
+
+
+def arg_text(stripped: str, open_paren: int) -> str | None:
+    """What sits between this '(' and its match."""
+    depth = 0
+    for i in range(open_paren, len(stripped)):
+        if stripped[i] in "([{":
+            depth += 1
+        elif stripped[i] in ")]}":
+            depth -= 1
+            if depth == 0:
+                return stripped[open_paren + 1:i]
+    return None
+
+
+def stale_call_sites(root: pathlib.Path, files: list[str]) -> list[str]:
+    """An argument passed into a parameter of a different name.
+
+    Lua does not check arity. A call with too few arguments leaves the rest
+    nil, so inserting a parameter in the middle of a signature and missing one
+    caller is silent everywhere the suite can see: Route.Plan grew a shardOf
+    ahead of its now, and /ewc route went on passing four arguments. The timer
+    it then tried to call as a function was the number now. Green tests, green
+    deploy, and the command was dead for anyone who had actually set a route.
+
+    Arity alone cannot find this -- trailing arguments are legitimately dropped
+    all over this addon. What gives it away is a bare name that matches a
+    parameter of the callee at a different position, which is what a stale call
+    looks like after a signature grows in the middle.
+    """
+    params: dict[tuple[str, str], list[str]] = {}
+    stripped_of: dict[str, str] = {}
+    for rel in files:
+        text = strip_code((root / rel).read_text(encoding="utf-8"))
+        stripped_of[rel] = text
+        for m in DEF_METHOD.finditer(text):
+            names = [a.strip() for a in m.group(3).split(",") if a.strip()]
+            params[(m.group(1), m.group(2))] = names
+
+    problems = []
+    for rel, text in stripped_of.items():
+        for m in CALL_METHOD.finditer(text):
+            key = (m.group(1), m.group(2))
+            if key not in params or text[m.start():].startswith("function"):
+                continue
+            body = arg_text(text, m.end() - 1)
+            if body is None or not body.strip():
+                continue
+            args = split_commas(body)
+            for i, arg in enumerate(args):
+                if not arg.isidentifier():
+                    continue
+                if arg in params[key] and params[key].index(arg) != i:
+                    problems.append(
+                        f"{pathlib.Path(rel).name}:{line_of(text, m.start())} passes "
+                        f"'{arg}' as argument {i + 1} to {key[0]}.{key[1]}, which "
+                        f"takes {len(params[key])} and whose '{arg}' is argument "
+                        f"{params[key].index(arg) + 1}"
+                    )
+    return problems

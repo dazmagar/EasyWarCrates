@@ -565,7 +565,7 @@ HANDLERS.route = function(rest)
     end
 
     local now = GetServerTime()
-    local plan = ns.Route.Plan(ns.db.crates, ns.db.route, ns.GetZoneInterval, now)
+    local plan = ns.Route.Plan(ns.db.crates, ns.db.route, ns.GetZoneInterval, nil, now)
     local next_ = ns.Route.Next(plan)
     ns.Print("route: " .. ns.Route.Describe(ns.db.route))
     ns.Print("|cff777777         plane     lootable|r")
