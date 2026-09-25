@@ -278,15 +278,32 @@ end
 -- the player's own, another addon's, or this addon's from the previous flight
 -- -- can stop a new one taking, and nothing says so.
 --
--- CanSetUserWaypoint is no longer asked. RCT never asks it and RCT's pins
--- appear; asking it and refusing on a false meant quietly declining to place a
--- pin that would have worked. Attempting and then checking what actually
--- landed is both more reliable and the thing this addon keeps telling itself
--- to do -- look at the artefact, not the return code.
+-- Whether the game permits a pin is no longer asked before placing one. RCT
+-- never asks and RCT's pins appear; asking and refusing on a false meant
+-- quietly declining to place a pin that would have worked. Attempting and then
+-- checking what actually landed is both more reliable and the thing this addon
+-- keeps telling itself to do -- look at the artefact, not the return code.
+--
+-- It is still worth asking to explain a failure, which is what ns.PinAllowed
+-- is for. Guarded, because the name was wrong for as long as this code has
+-- existed -- the API is CanSetUserWaypointOnMap -- and the only line that
+-- called it was the one that runs when a pin has already failed. So the branch
+-- written to say why nothing appeared threw a Lua error instead, and that went
+-- unnoticed because pins kept taking. A diagnostic that throws is worse than
+-- one that admits it cannot tell.
 -- quiet suppresses the confirmation line, not the pin. A crate under its
 -- parachute drifts, so the pin follows it for the whole descent, and saying so
 -- each time filled the chat with forty identical lines in eighty seconds.
 -- The first placement is worth one line; the rest are the same news.
+-- true, false, or nil when this client will not answer.
+function ns.PinAllowed(mapID)
+    local ask = C_Map.CanSetUserWaypointOnMap
+    if not (ask and mapID) then return nil end
+    local ok, allowed = pcall(ask, mapID)
+    if not ok then return nil end
+    return allowed and true or false
+end
+
 function ns.SetCratePin(zoneID, x, y, quiet)
     C_Map.ClearUserWaypoint()
     C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(zoneID, x, y))
@@ -309,8 +326,10 @@ function ns.SetCratePin(zoneID, x, y, quiet)
         end
         return true, link
     end
+    local allowed = ns.PinAllowed(zoneID)
     ns.Print(("  |cffff8800the map pin did not take|r |cff777777(the game %s allow one on %s)|r"):format(
-        C_Map.CanSetUserWaypoint(zoneID) and "says it does" or "says it does not",
+        allowed == nil and "will not say whether it would" or
+            (allowed and "says it does" or "says it does not"),
         ns.GetZoneName(zoneID)))
     return false
 end

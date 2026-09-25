@@ -656,8 +656,8 @@ HANDLERS.pin = function()
     ns.Print(("standing on map %s, which resolves to %s"):format(
         tostring(raw), zoneID and (ns.GetZoneName(zoneID) .. " (" .. zoneID .. ")") or "nothing"))
     ns.Print(("game allows a pin -- on %s: %s | on %s: %s"):format(
-        tostring(raw), tostring(raw and C_Map.CanSetUserWaypoint(raw)),
-        tostring(zoneID), tostring(zoneID and C_Map.CanSetUserWaypoint(zoneID))))
+        tostring(raw), tostring(ns.PinAllowed(raw)),
+        tostring(zoneID), tostring(ns.PinAllowed(zoneID))))
 
     local pos = zoneID and C_Map.GetPlayerMapPosition(zoneID, "player")
     if not pos then
@@ -737,5 +737,9 @@ SLASH_EASYWARCRATES2 = "/easywarcrates"
 SlashCmdList.EASYWARCRATES = function(msg)
     local cmd, rest = tostring(msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
     local handler = HANDLERS[cmd:lower()] or (cmd == "" and HANDLERS.status) or HANDLERS.help
-    handler(rest)
+    local ok, err = pcall(handler, rest)
+    if not ok then
+        ns.Print(("|cffff8800/ewc %s broke partway:|r %s"):format(
+            cmd == "" and "status" or cmd, tostring(err)))
+    end
 end
