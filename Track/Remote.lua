@@ -283,10 +283,18 @@ function Remote.FromAlert(text, sender, zoneByName, now)
     local zoneName, shard = text:match(ALERT)
     if not zoneName then return nil end
 
-    local zoneID = zoneByName and zoneByName[zoneName]
-    if not zoneID then return nil, zoneName end
-
     local shardID = tonumber(shard)
+
+    -- The shard survives a name this client cannot read, and it is the only
+    -- handle on which zone was meant: RCT broadcasts the sender's own localised
+    -- name and the game will only tell us ours, so a German raider's
+    -- "Leerensturm" is unresolvable here however many of them are in the raid.
+    -- Handed back so the name can be filed against the shards it arrived with.
+    -- Not resolved from the shard automatically: shard 39 has been seen in
+    -- Harandar, Slayer's Rise and Voidstorm, so a low id matches more than one
+    -- zone and a wrong binding is worse than an unread name.
+    local zoneID = zoneByName and zoneByName[zoneName]
+    if not zoneID then return nil, zoneName, shardID end
     if not shardID then return nil, zoneName end
 
     return {

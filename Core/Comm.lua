@@ -224,15 +224,22 @@ function Comm.OnChat(text, sender, channel)
     if isSelf(sender) then return end
     if not rateOK(sender) then return end
 
-    local report, unresolved = ns.Remote.FromAlert(text, sender, zoneNames(), GetServerTime())
+    local report, unresolved, shardID = ns.Remote.FromAlert(
+        text, sender, zoneNames(), GetServerTime())
     if report then return take(report, channel) end
     if unresolved then
         -- Filed, not just logged. The log is a 400-line ring and these arrive
         -- in raids only, so a name that scrolls off is a name lost.
         local seen = ns.db.unknownZones
         if seen then
-            local held = seen[unresolved] or { n = 0, first = GetServerTime() }
+            local held = seen[unresolved] or { n = 0, first = GetServerTime(), shards = {} }
             held.n, held.last, held.from = held.n + 1, GetServerTime(), sender
+            -- Which shards this name arrived about. A shard that also turns up
+            -- in a report whose zone IS readable is what settles the mapping,
+            -- and weighing that takes a human rather than the addon: the same
+            -- id can belong to more than one zone.
+            held.shards = held.shards or {}
+            if shardID then held.shards[shardID] = (held.shards[shardID] or 0) + 1 end
             seen[unresolved] = held
         end
         log({ via = "RCT", from = sender, channel = channel, verdict = "unknown zone",

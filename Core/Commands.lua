@@ -284,7 +284,14 @@ HANDLERS.comm = function()
 
     local unknown = {}
     for name, held in pairs(ns.db.unknownZones or {}) do
-        unknown[#unknown + 1] = ("%s (x%d, last from %s)"):format(name, held.n, tostring(held.from))
+        local shards = {}
+        for shardID, count in pairs(held.shards or {}) do
+            shards[#shards + 1] = ("%s x%d"):format(tostring(shardID), count)
+        end
+        table.sort(shards)
+        unknown[#unknown + 1] = ("%s (x%d, shard %s, last from %s)"):format(
+            name, held.n, #shards > 0 and table.concat(shards, "/") or "unknown",
+            tostring(held.from))
     end
     if #unknown > 0 then
         table.sort(unknown)

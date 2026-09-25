@@ -233,6 +233,32 @@ t.test("an unresolvable zone name is reported back, not swallowed", function()
     t.eq(name, "Nachtwald")
 end)
 
+-- The shard outlives the name, and it is the only handle on which zone was
+-- meant. One raid produced Leerensturm, Schlaechteranhoehe and a Russian name
+-- besides; each of those senders' reports was dropped whole.
+t.test("the shard comes back with a name this client cannot read", function()
+    local r, name, shardID = Remote.FromAlert(
+        "Hated Gaming - War Crate Alert! Flying in Leerensturm - Shard: 69", "Sender", BY_NAME, T0)
+    t.eq(r, nil)
+    t.eq(name, "Leerensturm")
+    t.eq(shardID, 69, "so the name can be filed against the shards it arrived with")
+end)
+
+-- Deliberately not resolved from the shard on its own. Shard 39 has been seen
+-- in Harandar, Slayer's Rise and Voidstorm on one account, so a low id matches
+-- more than one zone and a wrong binding is worse than an unread name.
+t.test("a readable name still wins, and a missing shard still refuses", function()
+    local r = Remote.FromAlert(
+        "Hated Gaming - War Crate Alert! Flying in Harandar - Shard: 39", "Sender", BY_NAME, T0)
+    t.eq(r.zoneID, HA, "the name decides the zone, never the shard")
+
+    local none, name2, shard2 = Remote.FromAlert(
+        "Hated Gaming - War Crate Alert! Flying in Nachtwald - Shard: none", "Sender", BY_NAME, T0)
+    t.eq(none, nil)
+    t.eq(name2, "Nachtwald")
+    t.eq(shard2, nil, "nothing to file it against, and it says so rather than inventing one")
+end)
+
 t.test("ordinary raid chat is not an alert", function()
     t.eq(Remote.FromAlert("anyone got a summon", "Someone", BY_NAME, T0), nil)
     t.eq(Remote.FromAlert("Flying in Harandar", "Someone", BY_NAME, T0), nil)
