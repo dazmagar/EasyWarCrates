@@ -29,6 +29,14 @@ local DEFAULTS = {
     -- there is: nothing ships these names and inventing them is worse than
     -- not having them.
     unknownZones = nil,
+    -- Vignettes this addon does not recognise, kept so a new one can be worked
+    -- out from what it does instead of from a guess. Dmitrii asked about
+    -- Spectral Battle Chest (6892), which also drops in Slayer's Rise and
+    -- which none of RCT, WarCrateTracker or CrateTrackerZK tracks -- so
+    -- nothing anywhere says whether it arrives by transport, whether it has
+    -- the five-id run a crate has, or whether it repeats on a cycle. The same
+    -- record covers a patch renumbering the crate ids under us.
+    strangers = nil,
     -- Tell the group what this client sees. Receiving needs no switch:
     -- hearing costs nothing and never touches the saved timers.
     share       = true,
@@ -89,6 +97,7 @@ local function applyDefaults(db)
     db.phase   = db.phase or ns.Phase.New()
     db.release = db.release or {}
     db.unknownZones = db.unknownZones or {}
+    db.strangers = db.strangers or {}
     db.log     = db.log or {}
     -- Deliberately not on db. db IS the saved table, so a store hung off
     -- it is a store written to disk, and what other players reported must

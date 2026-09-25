@@ -321,6 +321,44 @@ end
 -- Whether this client has been in THIS copy of the zone long enough for a fall
 -- to have started in front of it.
 --
+-- Vignettes with an id this addon does not know, filed as they appear.
+--
+-- Read rather than guessed, which is the same reason /ewc scan exists: a new
+-- object's zones, its cycle and whether it has more than one id are all things
+-- an evening of sightings answers and no amount of reasoning does.
+--
+-- Deduplicated by GUID, because a vignette stays drawn for minutes and every
+-- poll would otherwise count as another spawn. The shard rides along with each
+-- sighting so an interval can be paired within one copy of a zone.
+local STRANGER_IDS, STRANGER_SEEN = 30, 16
+local strangerGUID = {}
+
+local function noteStranger(info, guid, zoneID, pos, stamp)
+    local held = ns.db and ns.db.strangers
+    if not held or not zoneID or not info or not info.vignetteID then return end
+    if strangerGUID[guid] then return end
+    strangerGUID[guid] = stamp
+
+    local rec = held[info.vignetteID]
+    if not rec then
+        local kinds = 0
+        for _ in pairs(held) do kinds = kinds + 1 end
+        if kinds >= STRANGER_IDS then return end
+        rec = { n = 0, first = stamp, zones = {} }
+        held[info.vignetteID] = rec
+    end
+    rec.name = info.name or rec.name
+    rec.atlas = info.atlasName or rec.atlas
+    rec.n, rec.last = rec.n + 1, stamp
+
+    local where = rec.zones[zoneID]
+    if not where then where = { n = 0, seen = {} }; rec.zones[zoneID] = where end
+    where.n = where.n + 1
+    if pos then where.x, where.y = pos.x, pos.y end
+    where.seen[#where.seen + 1] = { at = stamp, shard = ns.Shard.FromVignetteGUID(guid) }
+    while #where.seen > STRANGER_SEEN do table.remove(where.seen, 1) end
+end
+
 -- The watch that decides whether a parachute was caught from the start is kept
 -- per zone, while the reading it guards is keyed per zone AND shard. Re-shard
 -- in the middle of a fall and the key is new, so "this parachute was not there
@@ -427,6 +465,7 @@ function Scanner.Reset()
     partialWhy = {}
     releaseLag = {}
     fallAtlas, atlasFlip = {}, {}
+    strangerGUID = {}
     lastSweptStamp, lastFalling = {}, {}
     noPosWarned = {}
     zoneWatchSince = {}
@@ -732,6 +771,9 @@ function Scanner.OnVignettesUpdated()
         end
 
         local stage = info and ns.VignetteStage(info.vignetteID)
+        if info and not stage then
+            noteStranger(info, guid, zoneID, vignettePosition(guid, zoneID, rawMap), stamp)
+        end
         if stage then
             local pos, posMap = vignettePosition(guid, zoneID, rawMap)
             local usable = pos and posMap == zoneID

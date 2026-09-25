@@ -96,6 +96,55 @@ end
 
 -- The important one on a new patch. Prints every vignette the game reports,
 -- whether or not we recognise it, so a renumbered crate id is visible at once.
+-- Every vignette id seen that this addon does not track, and what it has done.
+--
+-- Answers for a new object the three questions that decide whether it can be
+-- tracked at all: which zones, whether it repeats, and on what period. Read
+-- off sightings rather than reasoned about, because nothing anywhere documents
+-- these -- Spectral Battle Chest (6892) is tracked by none of the three
+-- competitors and Dmitrii's own observation is that it simply appears on the
+-- ground, which if it holds means there is no flight to predict and a spawn
+-- catalogue plus a cycle is the whole of it.
+local function strangerHistory()
+    local ids = {}
+    for id in pairs(ns.db.strangers or {}) do ids[#ids + 1] = id end
+    if #ids == 0 then return end
+    table.sort(ids)
+
+    ns.Print(("|cff777777seen before and not tracked -- %d id%s:|r"):format(
+        #ids, #ids == 1 and "" or "s"))
+    for _, id in ipairs(ids) do
+        local rec = ns.db.strangers[id]
+        ns.Print(("  id=|cffffd100%s|r %s |cff777777x%d, atlas %s|r"):format(
+            tostring(id), tostring(rec.name), rec.n, tostring(rec.atlas)))
+
+        for zoneID, where in pairs(rec.zones or {}) do
+            -- Gaps only between consecutive sightings on the SAME shard: two
+            -- copies of a zone run their own cycles, so pairing across them
+            -- measures nothing.
+            local gaps = {}
+            for i = 2, #where.seen do
+                local a, b = where.seen[i - 1], where.seen[i]
+                if a.shard and b.shard and a.shard == b.shard then
+                    gaps[#gaps + 1] = b.at - a.at
+                end
+            end
+            table.sort(gaps)
+            local period
+            if #gaps >= 3 then
+                local from, to, n = ns.DensestRun(gaps, 30)
+                if n and n >= 3 then period = ns.MedianOf(gaps, from, to) end
+            end
+            ns.Print(("     %s x%d  last at %s,%s shard %s  %s"):format(
+                ns.GetZoneName(zoneID), where.n, fmtPct(where.x), fmtPct(where.y),
+                tostring(where.seen[#where.seen] and where.seen[#where.seen].shard),
+                period and ("|cff33ff99repeats about every %ds|r"):format(math.floor(period + 0.5))
+                    or ("|cff777777%d gap%s on one shard so far, need 3|r"):format(
+                        #gaps, #gaps == 1 and "" or "s")))
+        end
+    end
+end
+
 HANDLERS.scan = function()
     local list, rawMap, zoneID = ns.Scanner.Sweep()
     ns.Print(("scan on map %s -> %s -- %d vignettes"):format(
@@ -104,7 +153,7 @@ HANDLERS.scan = function()
         #list))
     if #list == 0 then
         ns.Print("  nothing in range. Stand where you can see a crate or its plane.")
-        return
+        return strangerHistory()
     end
     for _, v in ipairs(list) do
         local tag = v.stage and ("|cff33ff99" .. v.stage .. "|r") or "|cff777777-|r"
@@ -113,6 +162,7 @@ HANDLERS.scan = function()
             fmtPct(v.x), fmtPct(v.y), tostring(v.posMap), tostring(v.shard), tostring(v.atlas)))
     end
     ns.Print("|cff777777ids we watch for: 3689 flying, 2967 falling, 6066 ground, 6067/6068 claimed|r")
+    strangerHistory()
 end
 
 HANDLERS.points = function()
