@@ -100,6 +100,30 @@ local PREDICTION_MEMORY = 600  -- a guess older than this is not about this crat
 -- once a second for the whole of its fall.
 local pinnedAt = {}
 
+-- Far enough to be worth moving the pin for. A parachute drifts a little on
+-- every sweep, and at the old hundredth of a percent every one of those counted
+-- as a new place to point at.
+local PIN_MOVED = 0.004
+
+-- One gate for every pin this addon places by itself.
+--
+-- Only the vignette path had a gate. The two prediction paths pinned on every
+-- sweep and announced each time, so a track holding one answer for a minute
+-- printed six of those lines for two decisions. Where the pin went is on the
+-- line above it either way, so it is said once per zone and then moved quietly.
+--
+-- `always` is for a landing: the one position nobody had to guess at re-pins
+-- however small the drift.
+local function pinCrate(zoneID, x, y, always)
+    if not ns.db.waypoint then return end
+    local prev = pinnedAt[zoneID]
+    local moved = not prev
+        or math.abs(prev.x - x) > PIN_MOVED or math.abs(prev.y - y) > PIN_MOVED
+    if not (moved or always) then return end
+    pinnedAt[zoneID] = { x = x, y = y }
+    return ns.SetCratePin(zoneID, x, y, prev ~= nil)
+end
+
 -- Every sighting of a crate's own vignette. This is the truth the prediction
 -- was only guessing at, so it scores the guess, files the landing spot, and
 -- reports the timer -- but only the last of those depends on the timer having
@@ -141,18 +165,8 @@ function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict, backdated)
     -- parachute used to leave the map bare: there is no transport left to
     -- predict from, and the one position nobody had to guess at -- printed on
     -- the line above -- was the one never pinned.
-    -- Far enough to be worth moving the pin for. A parachute drifts a little
-    -- on every sweep, and at the old hundredth of a percent every one of those
-    -- counted as a new place to point at.
-    local PIN_MOVED = 0.004
-    local prev = pinnedAt[zoneID]
-    local moved = not prev
-        or math.abs(prev.x - pos.x) > PIN_MOVED or math.abs(prev.y - pos.y) > PIN_MOVED
-    -- The landing itself always re-pins, however small the drift: that is the
-    -- one position nobody had to guess at.
-    if ns.db.waypoint and stage ~= "claimed" and (moved or ns.LANDED_STAGE[stage]) then
-        pinnedAt[zoneID] = { x = pos.x, y = pos.y }
-        ns.SetCratePin(zoneID, pos.x, pos.y, prev ~= nil)
+    if stage ~= "claimed" then
+        pinCrate(zoneID, pos.x, pos.y, ns.LANDED_STAGE[stage])
     end
 
     local guess = ns.lastPrediction[zoneID]
@@ -314,7 +328,7 @@ function ns.OnHovering(zoneID, spot, dist)
     if not ns.db.waypoint then
         ns.Print("  |cff777777no map pin: turned off in settings|r")
     else
-        ns.SetCratePin(zoneID, spot.x, spot.y)
+        pinCrate(zoneID, spot.x, spot.y)
     end
 end
 
@@ -364,7 +378,11 @@ function ns.OnPrediction(zoneID, result, fit)
         -- the pin on the way, because the link it sends IS this client's
         -- waypoint. Pinning again afterwards would be the same call twice.
         local said = firm and ns.Comm and ns.Comm.Announce(zoneID, s.x, s.y)
-        if said ~= "sent" then ns.SetCratePin(zoneID, s.x, s.y) end
+        if said == "sent" then
+            pinnedAt[zoneID] = { x = s.x, y = s.y }   -- announcing set it
+        else
+            pinCrate(zoneID, s.x, s.y)
+        end
     end
 end
 
