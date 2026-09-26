@@ -67,6 +67,23 @@ local function makeRow(parent, index)
         if not d then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine(ns.GetZoneName(d.zoneID))
+        if d.spectralOnly then
+            local since = d.spectral and d.spectral.since or GetServerTime()
+            GameTooltip:AddLine(("Spectral Battle Chest, on the ground for %s."):format(
+                (ns.FormatClock(GetServerTime() - since):gsub("^%s+", ""))), 0.8, 0.55, 1, true)
+            if d.spectral and d.spectral.x then
+                GameTooltip:AddLine(("  at %.1f, %.1f"):format(
+                    d.spectral.x * 100, d.spectral.y * 100), 0.7, 0.7, 0.7)
+            end
+            GameTooltip:AddLine("Not a war crate: no transport, no parachute, and it stays "
+                .. "a minute or two. This zone's crate is on its own row.", 0.6, 0.6, 0.6, true)
+            GameTooltip:AddLine(" ")
+            local _, chestWhere = ns.Comm and ns.Comm.RowChannel()
+            GameTooltip:AddLine(chestWhere and ("Left-click to post this to " .. chestWhere)
+                or "Left-click to post this -- you are not in a group", 0.6, 0.6, 0.6)
+            GameTooltip:Show()
+            return
+        end
         local said = d.shardFrom == "you" and "you are in it"
             or d.shardFrom and ("%s is in it"):format(tostring(d.shardFrom)) or nil
         GameTooltip:AddLine(("shard %s%s"):format(tostring(d.shardID or "?"),
@@ -163,7 +180,16 @@ local function paintRow(r, row, isNext)
     local spectral = row.spectral and " |cffcc88ffspectral|r" or ""
     r.left:SetText(("%s|cffffffff%s|r %s%s"):format(mark, row.abbr, shard, spectral))
 
-    if row.live then
+    if row.spectralOnly then
+        -- Its own row, so it says its own thing. The live entry it carries is
+        -- there to rank it and fill the bar, not to be read as a crate.
+        local held = (row.spectral and row.spectral.since)
+            and (" " .. (ns.FormatClock(GetServerTime() - row.spectral.since):gsub("^%s+", "")))
+            or ""
+        r.right:SetText(("|cffcc88ffCHEST ON THE GROUND%s|r"):format(held))
+        r.bar:SetValue(1)
+        r.bar:SetStatusBarColor(0.8, 0.53, 1, 1)
+    elseif row.live then
         -- The crate that is there NOW, in place of the countdown to the next.
         -- The bar shows the descent rather than the cycle, so a row that is
         -- about to be worth flying to looks different from one that is not.

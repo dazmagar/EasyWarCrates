@@ -242,6 +242,35 @@ function Model.BuildRows(db, route, now)
     -- ground can be taken now, one under a parachute shortly, a transport
     -- eventually. Everything else keeps the order it was built in.
     local order = {}
+    -- A chest gets its own row as soon as the zone has a crate to report too.
+    --
+    -- On a quiet zone it rides on the zone's row, which is right: one place,
+    -- one line, and the row has nothing else to say. But once a transport is in
+    -- the air or a crate is coming down there, one row is being asked to carry
+    -- two things that are collected separately and at different times -- and a
+    -- click on it can only mean one of them. Split, each row says one thing and
+    -- a click on it does what the row says.
+    local split = {}
+    for _, r in ipairs(rows) do
+        split[#split + 1] = r
+        if r.spectral and r.live then
+            split[#split + 1] = {
+                zoneID = r.zoneID,
+                abbr = r.abbr,
+                shardID = r.shardID,
+                spectral = r.spectral,
+                spectralOnly = true,
+                -- Ranked with a crate already on the ground: both are there to
+                -- be collected now, which is the only thing this ordering says.
+                live = { phase = "ground", rank = 1, since = r.spectral.since,
+                         x = r.spectral.x, y = r.spectral.y, spectral = true },
+                fraction = 1,
+            }
+            r.spectral = nil
+        end
+    end
+    rows = split
+
     for i, r in ipairs(rows) do order[r] = i end
     table.sort(rows, function(a, b)
         local ra = a.live and a.live.rank or 99
@@ -354,6 +383,13 @@ function Model.Announcement(row, now)
     -- chest is on the ground and gone in one or two. Dmitrii clicked the
     -- Slayer's Rise row with a chest lying in it and the raid was told about a
     -- transport instead.
+    -- A row that is only the chest says so and nothing else. Its live entry is
+    -- there to rank and draw it, not to be described as a crate.
+    if row.spectralOnly then
+        if spectralLine then return spectralLine, "spectral" end
+        return nil
+    end
+
     if live and live.phase ~= "ground" and spectralLine then
         return spectralLine, "spectral"
     end

@@ -130,22 +130,50 @@ local function strangerHistory()
                 end
             end
             table.sort(gaps)
-            local period
+            -- A cluster, and a figure that could be a cycle. Anything under the
+            -- window in which two sightings count as one object is the poll
+            -- rate wearing a decimal point: Slayer's Rise reported a set of
+            -- remains "repeating about every 0s".
+            local period, spread
             if #gaps >= 3 then
-                local from, to, n = ns.DensestRun(gaps, 30)
-                if n and n >= 3 then period = ns.MedianOf(gaps, from, to) end
+                local from, to, n = ns.DensestRun(gaps, 60)
+                if n and n >= 3 then
+                    local median = ns.MedianOf(gaps, from, to)
+                    if median >= ns.Scanner.STRANGER_SAME then
+                        period, spread = median, gaps[to] - gaps[from]
+                    end
+                end
+            end
+
+            local verdict
+            if period then
+                verdict = ("|cff33ff99about every %ds|r |cff777777(+/-%ds)|r"):format(
+                    math.floor(period + 0.5), math.floor(spread / 2 + 0.5))
+            elseif #gaps >= 3 then
+                verdict = ("|cff777777%d gaps, none agreeing -- not a cycle yet|r"):format(#gaps)
+            else
+                verdict = ("|cff777777%d gap%s on one shard, needs 3|r"):format(
+                    #gaps, #gaps == 1 and "" or "s")
             end
             ns.Print(("     %s x%d  last at %s,%s shard %s  %s"):format(
                 ns.GetZoneName(zoneID), where.n, fmtPct(where.x), fmtPct(where.y),
                 tostring(where.seen[#where.seen] and where.seen[#where.seen].shard),
-                period and ("|cff33ff99repeats about every %ds|r"):format(math.floor(period + 0.5))
-                    or ("|cff777777%d gap%s on one shard so far, need 3|r"):format(
-                        #gaps, #gaps == 1 and "" or "s")))
+                verdict))
         end
     end
 end
 
-HANDLERS.scan = function()
+HANDLERS.scan = function(rest)
+    rest = tostring(rest or ""):lower()
+    if rest == "reset" then
+        ns.db.strangers = {}
+        return ns.Print("record of untracked vignettes cleared.")
+    end
+    if rest == "seen" then
+        if next(ns.db.strangers or {}) then return strangerHistory() end
+        return ns.Print("nothing seen yet that this addon does not track.")
+    end
+
     local list, rawMap, zoneID = ns.Scanner.Sweep()
     ns.Print(("scan on map %s -> %s -- %d vignettes"):format(
         tostring(rawMap),
@@ -153,7 +181,7 @@ HANDLERS.scan = function()
         #list))
     if #list == 0 then
         ns.Print("  nothing in range. Stand where you can see a crate or its plane.")
-        return strangerHistory()
+        return
     end
     for _, v in ipairs(list) do
         local tag = v.stage and ("|cff33ff99" .. v.stage .. "|r") or "|cff777777-|r"
@@ -162,7 +190,12 @@ HANDLERS.scan = function()
             fmtPct(v.x), fmtPct(v.y), tostring(v.posMap), tostring(v.shard), tostring(v.atlas)))
     end
     ns.Print("|cff777777ids we watch for: 3689 flying, 2967 falling, 6066 ground, 6067/6068 claimed|r")
-    strangerHistory()
+    local kinds = 0
+    for _ in pairs(ns.db.strangers or {}) do kinds = kinds + 1 end
+    if kinds > 0 then
+        ns.Print(("|cff777777%d other id%s seen before and not tracked -- /ewc scan seen|r"):format(
+            kinds, kinds == 1 and "" or "s"))
+    end
 end
 
 HANDLERS.points = function()
@@ -789,6 +822,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc map      -- the map chain above you, and what it resolves to")
     ns.Print("  /ewc geo      -- where the six zones sit relative to each other")
     ns.Print("  /ewc scan     -- every vignette in range, raw. Use this first on a new patch")
+    ns.Print("  /ewc scan seen-- ids seen before that this addon does not track; 'reset' clears")
     ns.Print("  /ewc yells    -- what the crate announcer said, and whether it counted")
     ns.Print("  /ewc comm     -- what other players and their addons are broadcasting")
     ns.Print("  /ewc announce -- post where you stand to the group, as a pin they can click")

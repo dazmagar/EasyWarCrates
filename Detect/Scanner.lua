@@ -358,13 +358,36 @@ end
 -- poll would otherwise count as another spawn. The shard rides along with each
 -- sighting so an interval can be paired within one copy of a zone.
 local STRANGER_IDS, STRANGER_SEEN = 30, 16
-local strangerGUID = {}
+
+-- Long enough that a vignette drawn continuously counts once, short enough that
+-- a genuine respawn on the same spot is not swallowed. The Spectral Battle
+-- Chest is documented at thirty minutes and lies there one or two, so anything
+-- between those two is safe; five minutes is well clear of both.
+local STRANGER_SAME = 300
+Scanner.STRANGER_SAME = STRANGER_SAME
+
+-- Keyed by what the object is and where, not by its GUID.
+--
+-- A vignette's GUID churns -- it comes and goes while the thing itself stays
+-- put, which is already why the transport gets announced per zone rather than
+-- per track -- so a GUID key counted the same object over and over. Slayer's
+-- Rise reported eighty-seven sightings of one set of remains and a cycle of
+-- zero seconds, which is not a measurement, it is the poll rate.
+local strangerSeen = {}
 
 local function noteStranger(info, guid, zoneID, pos, stamp)
     local held = ns.db and ns.db.strangers
     if not held or not zoneID or not info or not info.vignetteID then return end
-    if strangerGUID[guid] then return end
-    strangerGUID[guid] = stamp
+    -- Position to the nearest percent: a vignette wobbles a little between
+    -- polls, and two objects a percent apart are the same object.
+    local key = ("%d:%s:%s:%s"):format(info.vignetteID, tostring(zoneID),
+        pos and math.floor(pos.x * 100 + 0.5) or "?",
+        pos and math.floor(pos.y * 100 + 0.5) or "?")
+    if strangerSeen[key] and (stamp - strangerSeen[key]) < STRANGER_SAME then
+        strangerSeen[key] = stamp
+        return
+    end
+    strangerSeen[key] = stamp
 
     local rec = held[info.vignetteID]
     if not rec then
@@ -495,7 +518,7 @@ function Scanner.Reset()
     partialWhy = {}
     releaseLag = {}
     fallAtlas, atlasFlip = {}, {}
-    strangerGUID = {}
+    strangerSeen = {}
     liveSpectral = {}
     lastSweptStamp, lastFalling = {}, {}
     noPosWarned = {}

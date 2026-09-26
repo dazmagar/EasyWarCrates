@@ -589,3 +589,68 @@ t.test("a chest on the ground outranks a countdown to one that is not", function
     t.ok(said:find("SPECTRAL CHEST", 1, true), said)
     t.eq(subject, "spectral")
 end)
+
+
+-- Dmitrii's two cases, 26 Sep. A chest on a quiet zone rides on that zone's
+-- row: one place, one line, and the row has nothing else to say. A chest in a
+-- zone that also has a crate coming gets a row of its own, because otherwise
+-- one line carries two things collected separately and a click on it can only
+-- mean one of them.
+local function withScanner(live, spectral, fn)
+    local prev = ns.Scanner
+    ns.Scanner = {
+        LiveCrate = function() return live end,
+        Spectral = function() return spectral end,
+    }
+    local ok, err = pcall(fn)
+    ns.Scanner = prev
+    if not ok then error(err, 0) end
+end
+
+t.test("a chest alone rides on the zone's own row", function()
+    withScanner(nil, { since = T0 - 40, x = 0.692, y = 0.482 }, function()
+        local rows = Model.BuildRows(db({ SR, 45, T0 - 30 }), nil, T0)
+        t.eq(#rows, 1, "one place, one line")
+        t.ok(rows[1].spectral, "and the row is marked")
+        t.eq(rows[1].spectralOnly, nil, "it is the zone's row, not a chest row")
+
+        local said, subject = Model.Announcement(rows[1], T0)
+        t.ok(said:find("SPECTRAL CHEST", 1, true), said)
+        t.ok(said:find("69.2, 48.2", 1, true), "with where to go")
+        t.eq(subject, "spectral")
+    end)
+end)
+
+t.test("a chest beside a crate takes a row of its own", function()
+    withScanner({ phase = "falling", since = T0 - 5 },
+                { since = T0 - 40, x = 0.692, y = 0.482 }, function()
+        local rows = Model.BuildRows(db({ SR, 45, T0 - 30 }), nil, T0)
+        t.eq(#rows, 2, "the crate and the chest are two things")
+
+        local crate, chest
+        for _, r in ipairs(rows) do
+            if r.spectralOnly then chest = r else crate = r end
+        end
+        t.ok(crate and chest, "one of each")
+        t.eq(crate.spectral, nil, "and they do not overlap: the crate row drops the chest")
+        t.eq(crate.zoneID, chest.zoneID, "same zone, same shard")
+        t.eq(crate.shardID, chest.shardID)
+
+        -- The whole point of splitting them: a click does what its row says.
+        local crateSaid, crateSubject = Model.Announcement(crate, T0)
+        t.ok(crateSaid:find("landing", 1, true), crateSaid)
+        t.eq(crateSubject, "crate")
+
+        local chestSaid, chestSubject = Model.Announcement(chest, T0)
+        t.ok(chestSaid:find("SPECTRAL CHEST", 1, true), chestSaid)
+        t.eq(chestSubject, "spectral")
+    end)
+end)
+
+t.test("a chest row is ranked with what can be collected now", function()
+    withScanner({ phase = "inbound" }, { since = T0 - 10, x = 0.5, y = 0.5 }, function()
+        local rows = Model.BuildRows(db({ SR, 45, T0 - 30 }), nil, T0)
+        t.eq(rows[1].spectralOnly, true,
+            "the chest is on the ground; the transport is three minutes away")
+    end)
+end)
