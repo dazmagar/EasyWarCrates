@@ -46,6 +46,10 @@ Remote.LIFETIME = LIFETIME
 -- Matches Model.LiveFor, because both feed the same sorted list and two
 -- orderings would put a remote parachute above a local one or below it
 -- depending on which built the row.
+-- Stages that mean the crate is down: the drop time is known and the cycle is
+-- pinned by it, whatever happens to the crate afterwards.
+local LANDED = { ground = true, claimed = true }
+
 local RANK = { ground = 1, falling = 2, flying = 3 }
 Remote.RANK = RANK
 
@@ -127,6 +131,72 @@ function Remote.For(store, zoneID, now)
 end
 
 -- Drops what has aged out. Returns how many went.
+-- The best anchor for a zone: a point in its cycle that somebody else supplied.
+--
+-- Kept apart from Remote.For, which deliberately refuses anchors because they
+-- say a crate existed rather than that one is in the air. This is the other
+-- half of that: an anchor cannot make a live row, and it can perfectly well
+-- make a countdown.
+--
+-- Prefers the shard this client is actually in. An anchor for another copy of
+-- the zone is still worth showing -- it is the cycle, and the row says whose
+-- word it is -- but it is second choice.
+function Remote.AnchorFor(store, zoneID, shardID, now)
+    local shards = store and store[zoneID]
+    if not shards then return nil end
+    local best, bestShard
+    for id, entry in pairs(shards) do
+        if entry.stage == "anchor" and alive(entry, now) then
+            local better = not best
+                or (id == shardID and bestShard ~= shardID)
+                or (((id == shardID) == (bestShard == shardID)) and entry.at > best.at)
+            if better then best, bestShard = entry, id end
+        end
+    end
+    if not best then return nil end
+    return best, bestShard
+end
+
+-- A landed crate somebody saw is the strongest anchor there is: the drop time
+-- is known, which fixes that shard's cycle for hours. It was being thrown away
+-- ninety seconds later, so a zone the raid had just farmed went blank -- while
+-- the raid leader's own arithmetic, arriving as a countdown, was kept for
+-- twenty minutes. That is backwards.
+--
+-- Demoted rather than kept alive as-is: a row still saying ON THE GROUND ten
+-- minutes on would send somebody across a zone for a crate that has been
+-- looted. The stage becomes what the sighting still supports -- where the
+-- cycle sits -- and the time it happened is unchanged.
+-- Zones somebody has placed the cycle for, whether or not this client has ever
+-- timed them. A zone with no timer of its own gets no row without this, which
+-- is exactly the case being fixed: the raid farms Zul'Aman all evening and the
+-- row is blank because nobody here flew there.
+function Remote.AnchoredZones(store, now)
+    local out = {}
+    for zoneID, shards in pairs(store or {}) do
+        for _, entry in pairs(shards) do
+            if entry.stage == "anchor" and alive(entry, now) then
+                out[zoneID] = true
+                break
+            end
+        end
+    end
+    return out
+end
+
+function Remote.Settle(store, now)
+    local settled = 0
+    for _, shards in pairs(store or {}) do
+        for _, entry in pairs(shards) do
+            if LANDED[entry.stage] and (now - entry.at) > (LIFETIME[entry.stage] or 0) then
+                entry.stage = "anchor"
+                settled = settled + 1
+            end
+        end
+    end
+    return settled
+end
+
 function Remote.Expire(store, now)
     local removed = 0
     for zoneID, shards in pairs(store or {}) do

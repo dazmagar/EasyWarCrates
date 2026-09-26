@@ -143,10 +143,26 @@ end
 --   live        a crate down or falling in that zone now: { phase, toGround }
 --   next        the one row worth acting on
 function Model.BuildRows(db, route, now)
+    if ns.Remote and ns.Remote.Settle then ns.Remote.Settle(ns.remote, now) end
     local rows, seen = {}, {}
 
     local function add(zoneID, entry, shardID, planned, known, shardFrom)
         local interval = ns.GetZoneInterval(zoneID)
+        -- Nothing timed here, but somebody has told us where this zone's cycle
+        -- sits -- a countdown they posted, or a drop they watched land and
+        -- which has since settled into an anchor. A countdown is what that
+        -- supports, so it fills the same columns a timer of our own would and
+        -- the row says whose word it is.
+        local fromRemote
+        if not entry and ns.Remote then
+            local anchor, anchorShard = ns.Remote.AnchorFor(ns.remote, zoneID, shardID, now)
+            if anchor then
+                entry = { ts = anchor.at, source = anchor.via or "anchor", precise = false }
+                fromRemote = anchor.from
+                shardID = shardID or anchorShard
+                known = known or (anchorShard == shardID)
+            end
+        end
         local remaining = entry and ns.Timers.Remaining(entry, interval, now)
         local missed = entry and ns.Timers.MissedCycles(entry, interval, now) or 0
         -- A crate that is in the air or lying there right now outranks the
@@ -173,6 +189,8 @@ function Model.BuildRows(db, route, now)
             -- The shard is not known, so this timer may be for another copy.
             guessedShard = (not known and entry ~= nil) or nil,
             shardFrom  = shardFrom,
+            -- Whose word this countdown rests on, when it is not our own.
+            fromRemote = fromRemote,
             live      = live,
             -- A second object in the same zone, not a stage of the first. It
             -- rides on the row instead of taking one of its own because a zone
@@ -236,6 +254,20 @@ function Model.BuildRows(db, route, now)
     -- there is anything there.
     for zoneID in pairs((ns.Scanner and ns.Scanner.ActiveZones and ns.Scanner.ActiveZones()) or {}) do
         if not seen[zoneID] then add(zoneID, nil, nil, nil) end
+    end
+
+    -- And a zone somebody else has placed the cycle for. Without this the row
+    -- only appears once this client has been there, which misses the whole
+    -- point of a raid that splits up: the others farm Zul'Aman all evening and
+    -- the countdown they are working from never reaches the one person who
+    -- stayed behind.
+    if ns.Remote and ns.Remote.AnchoredZones then
+        for zoneID in pairs(ns.Remote.AnchoredZones(ns.remote, now)) do
+            if not seen[zoneID] then
+                local here = shardHere(zoneID, now)
+                add(zoneID, nil, here, nil, here ~= nil)
+            end
+        end
     end
 
     -- Anything live floats to the top, most urgent first: a crate on the

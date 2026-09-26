@@ -654,3 +654,41 @@ t.test("a chest row is ranked with what can be collected now", function()
             "the chest is on the ground; the transport is three minutes away")
     end)
 end)
+
+
+-- Dmitrii, 26 Sep: the raid farmed Zul'Aman, he never flew there, and the row
+-- disappeared as though nobody had seen it. Their sighting had aged out of its
+-- live window and nothing was left holding the cycle.
+t.test("a zone the raid farmed keeps its countdown after the crate is gone", function()
+    local prevRemote, prevNS = ns.remote, ns.Remote
+    ns.remote = ns.Remote.New()
+    ns.Remote.Note(ns.remote, { stage = "ground", zoneID = ZA, shardID = 1258,
+                                at = T0, from = "Loolara", via = "RCT" }, T0)
+
+    local ok, err = pcall(function()
+        -- Long past the ninety seconds a crate on the ground is worth showing.
+        local rows = Model.BuildRows(ns.Timers.New(), nil, T0 + 400)
+        local za
+        for _, r in ipairs(rows) do if r.zoneID == ZA then za = r end end
+        t.ok(za, "the row is still there")
+        t.eq(za.live, nil, "not as a crate to go and take -- that one is looted")
+        t.ok(za.remaining, "as a countdown to the next one")
+        t.eq(za.fromRemote, "Loolara", "and it says whose word it rests on")
+        t.eq(za.shardID, 1258)
+    end)
+    ns.remote, ns.Remote = prevRemote, prevNS
+    if not ok then error(err, 0) end
+end)
+
+t.test("our own timer outranks anybody's anchor", function()
+    local prevRemote = ns.remote
+    ns.remote = ns.Remote.New()
+    ns.Remote.Note(ns.remote, { stage = "anchor", zoneID = ZA, shardID = 1258,
+                                at = T0 - 500, from = "Loolara", via = "RCT" }, T0)
+    local ok, err = pcall(function()
+        local rows = Model.BuildRows(db({ ZA, 1258, T0 }), nil, T0 + 10)
+        t.eq(rows[1].fromRemote, nil, "we saw this ourselves; their anchor does not touch it")
+    end)
+    ns.remote = prevRemote
+    if not ok then error(err, 0) end
+end)

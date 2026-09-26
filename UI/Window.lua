@@ -236,7 +236,11 @@ local function paintRow(r, row, isNext)
         -- moment it happened to be spotted.
         -- A ? says which copy of the zone this countdown belongs to is not
         -- known, which is a different doubt from the ~ above.
-        local mark = row.guessedShard and "|cffff8800?|r" or (row.precise and "" or "~")
+        -- A dot for a countdown that rests on somebody else's word, the same
+        -- mark a live row from a report carries. It matters: their anchor is
+        -- about the copy of the zone THEY were in.
+        local mark = (row.fromRemote and "|cff33ddaa.|r" or "")
+            .. (row.guessedShard and "|cffff8800?|r" or (row.precise and "" or "~"))
         local plane = mark .. ns.FormatClock(row.remaining):gsub("^%s+", "")
         -- Two moments in one crate's life, which is what a farmer is actually
         -- deciding between: when to be in the zone, and when it is worth

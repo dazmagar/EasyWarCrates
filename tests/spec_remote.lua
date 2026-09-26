@@ -590,3 +590,57 @@ t.test("a countdown longer than the cycle is refused", function()
         "Next Crate: Zul'Aman - 1258 in 18:00", "Loolara", BY_NAME, T0, INTERVAL_OF),
         "and one inside it is kept")
 end)
+
+
+-- A crate somebody watched land is the strongest anchor there is: the drop
+-- time is known, which pins that shard's cycle for hours. It was being dropped
+-- ninety seconds later, so a zone the raid had just farmed went blank -- while
+-- the leader's own arithmetic, arriving as a countdown, was kept for twenty
+-- minutes. Dmitrii watched Zul'Aman vanish after the raid looted it.
+t.test("a landed sighting settles into an anchor instead of evaporating", function()
+    local store = Remote.New()
+    t.eq(Remote.Note(store, { stage = "ground", zoneID = ZA, shardID = 1258,
+                              at = T0, from = "Loolara", via = "RCT" }, T0), "new")
+
+    -- Inside its live window it is still a crate on the ground.
+    t.eq(Remote.Settle(store, T0 + 30), 0)
+    t.ok(Remote.For(store, ZA, T0 + 30), "a live row, because one is lying there")
+
+    -- Past it, the sighting no longer supports "go now" and still supports
+    -- where the cycle sits.
+    t.eq(Remote.Settle(store, T0 + 200), 1)
+    t.eq(Remote.For(store, ZA, T0 + 200), nil, "no live row: it has been looted")
+    local anchor = Remote.AnchorFor(store, ZA, 1258, T0 + 200)
+    t.ok(anchor, "but the cycle is still known")
+    t.eq(anchor.at, T0, "and at the moment it actually landed")
+    t.eq(anchor.from, "Loolara")
+end)
+
+t.test("a claimed crate settles the same way", function()
+    local store = Remote.New()
+    Remote.Note(store, { stage = "claimed", zoneID = ZA, shardID = 1258,
+                         at = T0, from = "Loolara", via = "RCT" }, T0)
+    t.eq(Remote.Settle(store, T0 + 200), 1)
+    t.ok(Remote.AnchorFor(store, ZA, 1258, T0 + 200))
+end)
+
+t.test("the copy of the zone you are in wins over another", function()
+    local store = Remote.New()
+    Remote.Note(store, { stage = "anchor", zoneID = ZA, shardID = 41,
+                         at = T0, from = "Someone", via = "HGLog" }, T0)
+    Remote.Note(store, { stage = "anchor", zoneID = ZA, shardID = 1258,
+                         at = T0 - 300, from = "Loolara", via = "RCT" }, T0)
+
+    local _, shard = Remote.AnchorFor(store, ZA, 1258, T0)
+    t.eq(shard, 1258, "even though the other is fresher")
+    local _, any = Remote.AnchorFor(store, ZA, nil, T0)
+    t.eq(any, 41, "and with no shard to prefer, the freshest")
+end)
+
+t.test("an anchor past its life is not offered", function()
+    local store = Remote.New()
+    Remote.Note(store, { stage = "anchor", zoneID = ZA, shardID = 41,
+                         at = T0, from = "Someone", via = "HGLog" }, T0)
+    t.ok(Remote.AnchorFor(store, ZA, 41, T0 + 1100))
+    t.eq(Remote.AnchorFor(store, ZA, 41, T0 + 1300), nil)
+end)
