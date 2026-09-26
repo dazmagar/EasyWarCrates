@@ -292,16 +292,53 @@ local function build()
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetClampedToScreen(true)
-    frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        local point, _, rel, x, y = self:GetPoint()
+    local function rememberWhereItLanded()
+        frame:StopMovingOrSizing()
+        local point, _, rel, x, y = frame:GetPoint()
         ns.db.window = { point = point, rel = rel, x = x, y = y }
-    end)
+    end
+    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStop", rememberWhereItLanded)
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", PAD, -6)
     title:SetText("EasyWarCrates")
+
+    -- A button over the title, because a FontString takes no clicks. It has to
+    -- forward dragging as well: the title is the natural place to grab a window
+    -- by, and swallowing that to gain a click would be a poor trade.
+    --
+    -- Shift held, for the same reason the row click is deliberate: this speaks
+    -- to everyone in the group, and grabbing a window to move it must not.
+    local nameplate = CreateFrame("Button", nil, frame)
+    nameplate:SetPoint("TOPLEFT", title, "TOPLEFT", -2, 2)
+    nameplate:SetPoint("BOTTOMRIGHT", title, "BOTTOMRIGHT", 2, -2)
+    nameplate:RegisterForDrag("LeftButton")
+    nameplate:SetScript("OnDragStart", function() frame:StartMoving() end)
+    nameplate:SetScript("OnDragStop", rememberWhereItLanded)
+    nameplate:SetScript("OnClick", function()
+        if not IsShiftKeyDown() or not ns.Comm then return end
+        local what, channel = ns.Comm.AnnounceAddon()
+        if what == "alone" then
+            ns.Print("|cff777777not in a group, so there is nobody to tell|r")
+        elseif what == "too-soon" then
+            ns.Print("|cff777777said that recently -- give it a minute|r")
+        elseif what == "sent" then
+            ns.Print(("|cff777777named the addon in %s|r"):format(
+                channel == "RAID" and "raid chat" or "party chat"))
+        end
+    end)
+    nameplate:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+        GameTooltip:AddLine("EasyWarCrates")
+        local _, where = ns.Comm and ns.Comm.RowChannel()
+        GameTooltip:AddLine(where and ("Shift-click to name this addon in "
+            .. (where == "a raid warning" and "raid chat" or where))
+            or "Shift-click to name this addon to your group", 0.6, 0.6, 0.6, true)
+        GameTooltip:AddLine("Drag to move the window.", 0.6, 0.6, 0.6)
+        GameTooltip:Show()
+    end)
+    nameplate:SetScript("OnLeave", GameTooltip_Hide)
 
     local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     close:SetSize(22, 22)

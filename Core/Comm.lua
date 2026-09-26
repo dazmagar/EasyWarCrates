@@ -368,6 +368,35 @@ function Comm.RowChannel()
     return "RAID", "raid chat"
 end
 
+-- Name the addon to the group, for when somebody asks what you are using.
+--
+-- The name and nothing else. Blizzard's addon policy is explicit that an addon
+-- may not be used to advertise goods or services, and that pointers to where it
+-- is distributed belong on its own site and not in the game. A player telling
+-- their raid what they are running is that player speaking; an addon printing
+-- store links into chat is the thing the policy forbids, and the difference is
+-- worth keeping on the right side of.
+--
+-- Never a raid warning, even when this client could send one. What is being
+-- said does not warrant interrupting twenty people, and the row announce is
+-- where the privileged channel earns its place.
+local ADDON_COOLDOWN = 60
+local lastAddonSaid = -math.huge
+
+function Comm.AnnounceAddon()
+    local channel = Comm.RowChannel()
+    if not channel then return "alone" end
+    if channel == "RAID_WARNING" then channel = "RAID" end
+
+    local now = GetTime()
+    if (now - lastAddonSaid) < ADDON_COOLDOWN then return "too-soon" end
+    lastAddonSaid = now
+
+    pcall(SendChatMessage,
+        "Using EasyWarCrates for war crate timers and drop predictions.", channel)
+    return "sent", channel
+end
+
 function Comm.AnnounceRow(row)
     if type(row) ~= "table" then return "nothing" end
     local text, subject = ns.Model.Announcement(row, GetServerTime())
