@@ -108,6 +108,13 @@ afterwards. A check that has only ever passed has not been tested.
 
 ## Credits
 
+Written by Dazm -- `dazmagar` on GitHub, SDET by trade -- and exercised in the
+field across four realms and both factions: Jonnydurotar and Bighoofski on
+Stormscale, Dazm, Mossgrave and Zyrren on Ragnaros, Dazm, Vaelrix and Zyrandel
+on Ravencrest, and Temporize, Xevrith and Xyrris on Tarren Mill. Nearly every
+figure in this addon -- the descent times, the cycle lengths, the release bias,
+the drop points -- was measured on those characters rather than assumed.
+
 The drop point catalogue is built from Wowhead's recorded spawns for object
 290129. Vignette ids were cross-checked against RCT, WarCrateTracker and
 CrateTrackerZK. Russian announcer phrasings come from CrateTrackerZK's locale.
