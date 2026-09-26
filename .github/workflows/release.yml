@@ -1,0 +1,39 @@
+# Publishes a release to CurseForge, Wago and GitHub from one annotated tag.
+#
+# Wago is not an alternative to CurseForge here, it is the other half of the
+# audience: CurseForge refused WowUp's application for API access and Wago
+# partnered with WowUp instead, so a player using WowUp can only reach this
+# addon through Wago. Publishing to one of the two leaves half the players
+# unable to install it.
+#
+# Which project a token uploads to comes from the .toc, not from here:
+# X-Curse-Project-ID and X-Wago-ID. No id, no upload to that site, silently --
+# so check the run's log the first time.
+#
+# Triggered by an annotated tag, which is also where the version comes from:
+#   git tag -a v0.1.0 -m "First release" && git push origin v0.1.0
+name: Package and release
+
+on:
+  push:
+    tags:
+      - '**'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+      GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Clone project
+        uses: actions/checkout@v7
+        with:
+          # The packager reads the tag history to build the changelog.
+          fetch-depth: 0
+      - name: Package and release
+        uses: BigWigsMods/packager@v2

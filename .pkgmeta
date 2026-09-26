@@ -5,15 +5,25 @@ package-as: EasyWarCrates
 # tools/ deploys to one particular machine, tests/ and research/ never ship,
 # and tmp/ holds working notes.
 #
+# assets/ is the screenshots for the listing page, which belong on the page and
+# not inside the download. dist/ is the archive this repo builds for itself.
+#
 # tools/deploy.py enforces the same thing from the other end -- it copies the
 # .toc and exactly the files it lists -- so the deployed folder and the
 # published zip agree by construction rather than by two lists being kept in
-# step by hand.
+# step by hand. tools/package.py then reads its own archive back and refuses
+# any of these, so a name missed here is still caught before anything is
+# uploaded.
 ignore:
     - tools
     - tests
     - research
     - tmp
     - .venv
+    - dist
+    - assets
+    - .github
     - .gitattributes
+    - .gitignore
     - .pkgmeta
+    - README.md
