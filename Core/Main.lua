@@ -70,7 +70,10 @@ local function remember(line)
     while #log > LOG_MAX do table.remove(log, 1) end
 end
 
-function ns.Say(...)
+-- An answer: what the addon says because the player just did something. A
+-- command, a click, a setting changed. Always printed -- an answer that does
+-- not arrive is a bug, not a preference.
+function ns.Print(...)
     local line = string.join(" ", tostringall(...))
     remember(line)
     print(PREFIX .. line)
