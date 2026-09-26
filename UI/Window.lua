@@ -5,7 +5,7 @@ local ADDON, ns = ...
 
 local ROW_H, ROW_GAP, PAD = 18, 2, 8
 local WIDTH = 260
-local MAX_ROWS = 8
+local MAX_ROWS = 10
 
 -- One fixed colour per zone so a row is recognisable before it is read.
 local ZONE_COLOUR = {
