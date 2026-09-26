@@ -370,7 +370,7 @@ end
 
 function Comm.AnnounceRow(row)
     if type(row) ~= "table" then return "nothing" end
-    local text = ns.Model.Announcement(row, GetServerTime())
+    local text, subject = ns.Model.Announcement(row, GetServerTime())
     if not text then return "nothing" end
     if not IsInGroup() then return "alone" end
 
@@ -380,9 +380,12 @@ function Comm.AnnounceRow(row)
     end
     lastClick[row.zoneID] = now
 
-    local live = row.live
-    if live and live.x and live.y then
-        local ok, link = ns.SetCratePin(row.zoneID, live.x, live.y)
+    -- The pin has to point at whatever was just said. A row can carry a crate
+    -- and a chest at once, and a line about one with a pin on the other sends
+    -- the reader to the wrong place with our own link as the evidence.
+    local at = (subject == "spectral") and row.spectral or row.live
+    if at and at.x and at.y then
+        local ok, link = ns.SetCratePin(row.zoneID, at.x, at.y)
         if ok and link then text = text .. " " .. link end
     end
 

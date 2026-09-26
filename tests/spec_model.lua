@@ -516,3 +516,48 @@ t.test("a stale report does not put a zone at the top of the window", function()
     t.eq(Model.LiveFor(ZA, T0 + 150), nil, "and nothing to say once it cannot be true")
     ns.db, ns.remote = nil, nil
 end)
+
+
+-- A second object in the same copy of the same zone, on the ground for one to
+-- two minutes. Dmitrii saw one, the row marked it, and a click said "nothing is
+-- known about that zone worth announcing" -- because nothing here produced a
+-- line for it.
+t.test("a chest with no crate beside it is worth announcing on its own", function()
+    local said, subject = Model.Announcement(
+        { zoneID = SR, shardID = 39, spectral = { since = T0, x = 0.53, y = 0.41 } }, T0 + 40)
+    t.ok(said and said:find("SPECTRAL CHEST", 1, true), tostring(said))
+    t.ok(said:find("0:40 so far", 1, true), said)
+    t.eq(subject, "spectral", "so the pin goes on the chest and not somewhere else")
+    t.eq(said:find("0.53", 1, true), nil, "no coordinates: the pin carries the spot")
+end)
+
+t.test("a crate we can see outranks the chest", function()
+    local said, subject = Model.Announcement(
+        { zoneID = SR, shardID = 39,
+          live = { phase = "ground", since = T0, x = 0.2, y = 0.2 },
+          spectral = { since = T0, x = 0.53, y = 0.41 } }, T0 + 10)
+    t.ok(said:find("crate ON THE GROUND", 1, true), said)
+    t.eq(subject, "crate")
+end)
+
+-- The crate came as a raid warning everyone has read, so repeating it is spam.
+-- The chest was not in that warning and is on the ground now.
+t.test("a chest survives the silence an RCT-carried crate gets", function()
+    local echo = { zoneID = SR, shardID = 39, live = { phase = "ground", since = T0, via = "RCT" } }
+    t.eq(Model.Announcement(echo, T0 + 10), nil)
+
+    echo.spectral = { since = T0, x = 0.53, y = 0.41 }
+    local said, subject = Model.Announcement(echo, T0 + 10)
+    t.ok(said and said:find("SPECTRAL CHEST", 1, true), tostring(said))
+    t.eq(subject, "spectral")
+end)
+
+t.test("a chest on the ground outranks a countdown to one that is not", function()
+    local row = { zoneID = SR, shardID = 39, remaining = 600, onGround = 700 }
+    t.ok(Model.Announcement(row, T0):find("transport in", 1, true))
+
+    row.spectral = { since = T0 - 15 }
+    local said, subject = Model.Announcement(row, T0)
+    t.ok(said:find("SPECTRAL CHEST", 1, true), said)
+    t.eq(subject, "spectral")
+end)

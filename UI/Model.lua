@@ -318,11 +318,28 @@ function Model.Announcement(row, now)
         return (ns.FormatClock(seconds):gsub("^%s+", ""))
     end
 
+    -- The chest, said the same way a crate on the ground is: no coordinates,
+    -- because the pin that travels with this points at the exact spot and a
+    -- pair of numbers beside it is the same fact twice. How long it has been
+    -- there is the part a reader weighs, since it only lasts a minute or two.
+    local spectralLine = nil
+    if row.spectral then
+        local age = (now and row.spectral.since)
+            and (" (%s so far)"):format(clock(now - row.spectral.since)) or ""
+        spectralLine = ("%s: SPECTRAL CHEST on the ground%s%s"):format(where, age, shard)
+    end
+
     -- Never echo the raid back at itself. A report carried by RCT arrived as a
     -- raid warning, so everyone has already read it; repeating it is spam
     -- dressed as help. Reports that came over an addon channel are invisible
     -- to anyone without that addon, so those are worth saying out loud.
-    if live and live.via == "RCT" then return nil end
+    --
+    -- The chest is not that report and is on the ground now, so it survives the
+    -- silence the crate gets.
+    if live and live.via == "RCT" then
+        if spectralLine then return spectralLine, "spectral" end
+        return nil
+    end
 
     if live then
         -- No coordinates. The pin that goes with this points at the exact
@@ -337,22 +354,24 @@ function Model.Announcement(row, now)
                 or ""
             if live.mine then
                 local left = live.toGone and (", %s left"):format(clock(live.toGone)) or age
-                return ("%s: crate ON THE GROUND, ours%s%s"):format(where, left, shard)
+                return ("%s: crate ON THE GROUND, ours%s%s"):format(where, left, shard), "crate"
             end
-            return ("%s: crate ON THE GROUND%s%s"):format(where, age, shard)
+            return ("%s: crate ON THE GROUND%s%s"):format(where, age, shard), "crate"
         end
         if live.phase == "falling" then
             return ("%s: crate landing in %s%s"):format(where,
-                live.toGround and clock(live.toGround) or "moments", shard)
+                live.toGround and clock(live.toGround) or "moments", shard), "crate"
         end
         return ("%s: transport in the air%s%s"):format(where,
-            live.toGround and (", down in " .. clock(live.toGround)) or "", shard)
+            live.toGround and (", down in " .. clock(live.toGround)) or "", shard), "crate"
     end
+
+    if spectralLine then return spectralLine, "spectral" end
 
     if row.remaining then
         return ("%s: transport in %s, lootable in %s%s"):format(where,
             clock(row.remaining),
-            row.onGround and clock(row.onGround) or "?", shard)
+            row.onGround and clock(row.onGround) or "?", shard), "crate"
     end
     return nil
 end
