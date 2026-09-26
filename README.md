@@ -114,3 +114,7 @@ CrateTrackerZK. Russian announcer phrasings come from CrateTrackerZK's locale.
 Zone abbreviations follow WarCrateTracker (MIT, Copyright 2024 Samuel Colburn),
 except that Eversong and Harandar are ES and HA here, because that is what
 raids call out.
+
+## License
+
+MIT. Use it, fork it, ship it -- keep the copyright notice.

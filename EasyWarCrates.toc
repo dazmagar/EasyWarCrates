@@ -2,6 +2,8 @@
 ## Title: EasyWarCrates
 ## Notes: Tracks War Supply Crate drops and predicts where the transport is headed.
 ## Version: 0.1.0
+## Author: Dazm
+## X-License: MIT
 ## SavedVariables: EasyWarCratesDB
 
 # Data and logic. Everything down to Track/Timers.lua loads under a plain Lua
