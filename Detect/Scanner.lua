@@ -359,6 +359,16 @@ end
 -- sighting so an interval can be paired within one copy of a zone.
 local STRANGER_IDS, STRANGER_SEEN = 30, 16
 
+-- Distinct NPC names kept. A crate zone has a handful that ever speak, so this
+-- is a ceiling against a surprise rather than a budget.
+local UNKNOWN_SPEAKERS = 12
+
+local function countKeys(t)
+    local n = 0
+    for _ in pairs(t or {}) do n = n + 1 end
+    return n
+end
+
 -- Long enough that a vignette drawn continuously counts once, short enough that
 -- a genuine respawn on the same spot is not swallowed. The Spectral Battle
 -- Chest is documented at thirty minutes and lies there one or two, so anything
@@ -1163,11 +1173,32 @@ function Scanner.OnAnnouncement(text, npcName, guid)
     local db = ns.db
     if not db or not db.enabled then return end
     if IsInInstance() then return end
+    local zoneID = ns.Zones.Normalize(playerMapID())
+
     -- Kept to lines from a known announcer. Everything else in the zone is
     -- chatter, and a log of it would bury the one line worth reading.
-    if not ns.IsAnnouncer(npcName) then return end
+    --
+    -- But the names are localised as much as the phrases are, and only English
+    -- and Russian are written down. On a German or French client this test
+    -- fails on every line and the yell anchor never fires -- with nothing in
+    -- /ewc yells to say why, because the refusal happened before the log. That
+    -- is the shape of failure this addon keeps setting out to avoid, so the
+    -- speaker is counted on the way past. Only inside a tracked crate zone,
+    -- and only their name, which bounds it to something readable.
+    if not ns.IsAnnouncer(npcName) then
+        local seen = zoneID and ns.db and ns.db.unknownSpeakers
+        if seen and type(npcName) == "string" and npcName ~= "" then
+            local held = seen[npcName]
+            if held or countKeys(seen) < UNKNOWN_SPEAKERS then
+                held = held or { n = 0, first = stampClock() }
+                held.n, held.last, held.zoneID = held.n + 1, stampClock(), zoneID
+                held.text = tostring(text):sub(1, 120)
+                seen[npcName] = held
+            end
+        end
+        return
+    end
 
-    local zoneID = ns.Zones.Normalize(playerMapID())
     local matched = ns.IsSpawnAnnouncement(npcName, text)
     local stamp = stampClock()
 

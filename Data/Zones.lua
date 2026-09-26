@@ -140,7 +140,24 @@ function ns.GetShippedInterval(zoneID)
     return ZONES[zoneID] and ZONES[zoneID].interval or 1100
 end
 
+-- The zone's name as this client's own game calls it, falling back to the
+-- English shipped above.
+--
+-- Nothing in this addon decides anything from a name -- vignettes are matched
+-- by id and zones by map id -- so this is display only. But a German player
+-- reading "Eversong Woods" in a window while their game says Immersangwald is
+-- being told about somewhere else, and the game will answer the question for
+-- free. Cached: this is called for every row on every refresh, and the answer
+-- cannot change within a session.
+local localName = {}
+
 function ns.GetZoneName(zoneID)
+    if localName[zoneID] then return localName[zoneID] end
     local z = ZONES[zoneID]
-    return z and z.name or ("Zone " .. tostring(zoneID))
+    local fallback = z and z.name or ("Zone " .. tostring(zoneID))
+    if not (C_Map and C_Map.GetMapInfo) then return fallback end
+    local ok, info = pcall(C_Map.GetMapInfo, zoneID)
+    local name = ok and info and info.name
+    localName[zoneID] = (type(name) == "string" and name ~= "") and name or fallback
+    return localName[zoneID]
 end

@@ -460,6 +460,29 @@ HANDLERS.yells = function()
     end
     ns.Print("|cff777777not recognised is either idle chatter or wording this locale needs"
         .. " adding -- worth sending on if a cycle really started.|r")
+
+    -- The gap that would otherwise be invisible. Announcer names are localised
+    -- as much as their lines are, and only English and Russian are written
+    -- down; on any other client nothing above this line ever appears and there
+    -- is no way to tell that from "nobody has spoken".
+    local strangers = {}
+    for name, held in pairs(ns.db.unknownSpeakers or {}) do
+        strangers[#strangers + 1] = { name = name, held = held }
+    end
+    if #strangers == 0 then return end
+    table.sort(strangers, function(a, b) return a.held.n > b.held.n end)
+
+    ns.Print(("|cffff8800%d other NPC%s spoken in a crate zone and %s not known"
+        .. " announcers:|r"):format(#strangers, #strangers == 1 and " has" or "s have",
+        #strangers == 1 and "is" or "are"))
+    for i = 1, math.min(#strangers, 6) do
+        local e = strangers[i]
+        ns.Print(("   %s |cff777777x%d in %s|r"):format(
+            e.name, e.held.n, ns.GetZoneName(e.held.zoneID)))
+        ns.Print(("      |cff777777%s|r"):format(tostring(e.held.text)))
+    end
+    ns.Print("|cff777777if a crate cycle started when one of those spoke, this addon cannot"
+        .. " see it on your locale -- that line is what it needs.|r")
 end
 
 HANDLERS.shard = function()

@@ -33,6 +33,11 @@ local DEFAULTS = {
     -- there is: nothing ships these names and inventing them is worse than
     -- not having them.
     unknownZones = nil,
+    -- NPCs heard speaking in a crate zone whose name this addon does not know
+    -- as an announcer. Announcer names and their lines are both localised, and
+    -- only English and Russian are written down, so on any other client the
+    -- yell anchor silently never fires. Collected so that stops being silent.
+    unknownSpeakers = nil,
     -- Vignettes this addon does not recognise, kept so a new one can be worked
     -- out from what it does instead of from a guess. Dmitrii asked about
     -- Spectral Battle Chest (6892), which also drops in Slayer's Rise and
@@ -125,6 +130,7 @@ local function applyDefaults(db)
     db.phase   = db.phase or ns.Phase.New()
     db.release = db.release or {}
     db.unknownZones = db.unknownZones or {}
+    db.unknownSpeakers = db.unknownSpeakers or {}
     db.strangers = db.strangers or {}
     db.log     = db.log or {}
     -- Deliberately not on db. db IS the saved table, so a store hung off
