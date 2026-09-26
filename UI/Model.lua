@@ -274,18 +274,18 @@ function Model.BuildRows(db, route, now)
     -- ground can be taken now, one under a parachute shortly, a transport
     -- eventually. Everything else keeps the order it was built in.
     local order = {}
-    -- A chest gets its own row as soon as the zone has a crate to report too.
+    -- A chest gets its own row as soon as the zone's row has anything else to
+    -- say -- a crate in the air, one coming down, or a countdown to the next.
     --
-    -- On a quiet zone it rides on the zone's row, which is right: one place,
-    -- one line, and the row has nothing else to say. But once a transport is in
-    -- the air or a crate is coming down there, one row is being asked to carry
-    -- two things that are collected separately and at different times -- and a
-    -- click on it can only mean one of them. Split, each row says one thing and
-    -- a click on it does what the row says.
+    -- It rides along only when that row would otherwise be blank: one place,
+    -- one line, and nothing competing for it. The moment the row is carrying
+    -- numbers, "on the ground" is what gets lost, and the numbers are about the
+    -- crate rather than the chest. Split, each row says one thing and a click
+    -- on it does what the row says.
     local split = {}
     for _, r in ipairs(rows) do
         split[#split + 1] = r
-        if r.spectral and r.live then
+        if r.spectral and (r.live or r.remaining) then
             split[#split + 1] = {
                 zoneID = r.zoneID,
                 abbr = r.abbr,

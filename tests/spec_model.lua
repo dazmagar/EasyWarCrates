@@ -601,6 +601,11 @@ local function withScanner(live, spectral, fn)
     ns.Scanner = {
         LiveCrate = function() return live end,
         Spectral = function() return spectral end,
+        ActiveZones = function()
+            local out = {}
+            if live or spectral then out[SR] = true end
+            return out
+        end,
     }
     local ok, err = pcall(fn)
     ns.Scanner = prev
@@ -609,7 +614,7 @@ end
 
 t.test("a chest alone rides on the zone's own row", function()
     withScanner(nil, { since = T0 - 40, x = 0.692, y = 0.482 }, function()
-        local rows = Model.BuildRows(db({ SR, 45, T0 - 30 }), nil, T0)
+        local rows = Model.BuildRows(ns.Timers.New(), nil, T0)
         t.eq(#rows, 1, "one place, one line")
         t.ok(rows[1].spectral, "and the row is marked")
         t.eq(rows[1].spectralOnly, nil, "it is the zone's row, not a chest row")
@@ -691,4 +696,25 @@ t.test("our own timer outranks anybody's anchor", function()
     end)
     ns.remote = prevRemote
     if not ok then error(err, 0) end
+end)
+
+
+-- A countdown is something the row is already saying, and it is about the
+-- crate. Dmitrii saw "SR spectral" beside a pair of times and no sign the chest
+-- was on the ground at all.
+t.test("a countdown is enough to give the chest its own row", function()
+    withScanner(nil, { since = T0 - 40, x = 0.692, y = 0.482 }, function()
+        local rows = Model.BuildRows(db({ SR, 45, T0 - 30 }), nil, T0)
+        t.eq(#rows, 2, "the countdown and the chest are two things")
+
+        local timed, chest
+        for _, r in ipairs(rows) do
+            if r.spectralOnly then chest = r else timed = r end
+        end
+        t.ok(timed and chest)
+        t.ok(timed.remaining, "the zone row keeps the countdown")
+        t.eq(timed.spectral, nil, "and stops claiming the chest")
+        t.eq(chest.remaining, nil, "the chest row has no countdown: it is there now")
+        t.eq(select(2, Model.Announcement(chest, T0)), "spectral")
+    end)
 end)
