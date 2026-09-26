@@ -756,6 +756,13 @@ HANDLERS.watch = function()
     ns.Print("live tracking readout " .. (ns.db.watch and "on" or "off"))
 end
 
+HANDLERS.chatter = function()
+    ns.db.chatter = not ns.db.chatter
+    ns.Print(("chat narration is now %s"):format(
+        ns.db.chatter and "|cff33ff99on|r" or "|cffff8800off|r"
+        .. " |cff777777-- still written to the log, and commands still answer|r"))
+end
+
 HANDLERS.verbose = function()
     ns.db.verbose = not ns.db.verbose
     ns.Print("verbose " .. (ns.db.verbose and "on" or "off"))
@@ -796,6 +803,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc shard    -- cross-check the shard number against a creature GUID")
     ns.Print("  /ewc watch    -- toggle the live readout while a transport is tracked")
     ns.Print("  /ewc waypoint -- toggle the map pin on a prediction")
+    ns.Print("  /ewc chatter  -- toggle whether the addon talks in chat at all")
     ns.Print("  /ewc verbose  -- toggle scan narration")
     ns.Print("  /ewc wipe     -- clear timers")
 end

@@ -325,7 +325,7 @@ local function restoreFromMemory(zoneID, shardID, stamp)
 
     local verdict = ns.Timers.Record(db.crates, zoneID, shardID, ts, "memory")
     if verdict == "new" or verdict == "refined" then
-        ns.Print(("%s |cffffffffshard %s|r -- |cff33ff99seen before|r"
+        ns.Say(("%s |cffffffffshard %s|r -- |cff33ff99seen before|r"
             .. " |cff777777(its cycle recalled across %d, give or take %ds)|r"):format(
             ns.GetZoneName(zoneID), tostring(shardID), cycles, math.floor(err + 0.5)))
         if ns.RefreshWindow then ns.RefreshWindow() end
@@ -627,7 +627,7 @@ function Scanner.Narrate(now)
         end
         if line and tr.narrated ~= state then
             tr.narrated = state
-            ns.Print(line)
+            ns.Say(line)
         end
     end
 end
@@ -756,7 +756,7 @@ function Scanner.OnVignettesUpdated()
         local why = moved and "|cffff5555this zone re-sharded under you|r"
             or ours and "your side had already claimed it"
             or "|cffff8800no claim of ours was drawn, so the other side took it|r"
-        ns.Print(("|cffff8800the crate in %s is no longer there|r |cff777777-- %s|r"):format(
+        ns.Say(("|cffff8800the crate in %s is no longer there|r |cff777777-- %s|r"):format(
             ns.GetZoneName(zoneID), why))
     end
 
@@ -814,7 +814,7 @@ function Scanner.OnVignettesUpdated()
                 live.seen, live.shard = stamp, ns.Shard.FromVignetteGUID(guid) or live.shard
                 if usablePos then live.x, live.y = usablePos.x, usablePos.y end
                 if not liveSpectral[zoneID] then
-                    ns.Print(("|cffcc88ff%s -- %s on the ground|r%s"):format(
+                    ns.Say(("|cffcc88ff%s -- %s on the ground|r%s"):format(
                         ns.GetZoneName(zoneID), tostring(info.name or "spectral chest"),
                         usablePos and (" |cffffd100at %.1f, %.1f|r"):format(
                             usablePos.x * 100, usablePos.y * 100) or ""))
@@ -827,7 +827,7 @@ function Scanner.OnVignettesUpdated()
             local usable = pos and posMap == zoneID
             if not usable and (tNow - (noPosWarned[zoneID] or -math.huge)) > NO_POS_COOLDOWN then
                 noPosWarned[zoneID] = tNow
-                ns.Print(("|cffff8800a %s crate in %s has no position on the zone map|r"
+                ns.Say(("|cffff8800a %s crate in %s has no position on the zone map|r"
                     .. " |cff777777-- not tracking it; /ewc scan for detail|r"):format(
                     stage, ns.GetZoneName(zoneID)))
             end
@@ -849,7 +849,7 @@ function Scanner.OnVignettesUpdated()
                         -- seconds for a single plane.
                         if (tNow - (spotted[zoneID] or -math.huge)) > SPOTTED_COOLDOWN then
                             spotted[zoneID] = tNow
-                            ns.Print(("|cffffd100transport spotted|r in %s -- tracking"):format(
+                            ns.Say(("|cffffd100transport spotted|r in %s -- tracking"):format(
                                 ns.GetZoneName(zoneID)))
                         end
                     end
@@ -897,7 +897,7 @@ function Scanner.OnVignettesUpdated()
                             -- and take it.
                             local live = liveCrate[zoneID] or { zoneID = zoneID }
                             if not live.mine then
-                                ns.Print(("|cff33ff99the crate in %s is %s|r"
+                                ns.Say(("|cff33ff99the crate in %s is %s|r"
                                     .. " |cff777777-- still there to take|r"):format(
                                     ns.GetZoneName(zoneID), side .. "'s"))
                             end
@@ -1177,7 +1177,7 @@ function Scanner.OnAnnouncement(text, npcName, guid)
         or sweepForShard(zoneID, stamp)
     note.shard = shard
     if not shard then
-        return ns.Print(("|cffff8800%s announced a crate in %s, but nothing here will say"
+        return ns.Say(("|cffff8800%s announced a crate in %s, but nothing here will say"
             .. " which shard it is|r |cff777777-- not timed; no vignette, no nameplate,"
             .. " nothing targeted|r"):format(npcName, ns.GetZoneName(zoneID)))
     end

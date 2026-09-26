@@ -4,6 +4,10 @@ local DEFAULTS = {
     enabled   = true,
     waypoint  = true,   -- drop a map pin on a confident prediction
     verbose   = false,  -- narrate every scan; for diagnosing, not for playing
+    -- Whether the addon talks in chat on its own. Off, because an addon that
+    -- does is one people route into a spare tab. Everything it would have said
+    -- is still written to db.log, and the commands still answer in full.
+    chatter   = false,
     -- Was on at 0.1.0 so the first flights could be watched at all. They have
     -- been, and it reports only on change now, but it is still a diagnostic.
     watch     = false,
@@ -66,10 +70,31 @@ local function remember(line)
     while #log > LOG_MAX do table.remove(log, 1) end
 end
 
-function ns.Print(...)
+function ns.Say(...)
     local line = string.join(" ", tostringall(...))
     remember(line)
     print(PREFIX .. line)
+end
+
+-- Narration: everything the addon says on its own, as opposed to answering
+-- something the player just did. Off by default.
+--
+-- An addon that talks unprompted is one people route into a spare chat tab or
+-- uninstall, and a first-time user reading forty lines about shards and
+-- descent readings has been given a diagnostic channel, not a feature. The
+-- window and the minimap button are how it reports; this is how it explains
+-- itself when asked to.
+--
+-- Logged either way, always. db.log is the record a failure gets diagnosed
+-- from afterwards, and a switch that emptied it would trade a real capability
+-- for a cosmetic one. Verbose implies this: turning on the detailed mode to
+-- work out what is happening and getting silence would be absurd.
+function ns.Say(...)
+    local line = string.join(" ", tostringall(...))
+    remember(line)
+    if ns.db and (ns.db.chatter or ns.db.verbose) then
+        print(PREFIX .. line)
+    end
 end
 
 function ns.Debug(...)
@@ -147,7 +172,7 @@ end
 -- actually moved. verdict is what Timers made of it.
 function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict, backdated)
     if verdict == "new" or verdict == "refined" then
-        ns.Print(string.format("%s |cffffffffshard %s|r -- crate %s at |cffffd100%.1f, %.1f|r%s",
+        ns.Say(string.format("%s |cffffffffshard %s|r -- crate %s at |cffffd100%.1f, %.1f|r%s",
             ns.GetZoneName(zoneID), tostring(shardID), stage, pos.x * 100, pos.y * 100,
             backdated and (" |cff777777(found lying there; timer set back %ds to the spawn)|r")
                 :format(math.floor(backdated + 0.5)) or ""))
@@ -169,7 +194,7 @@ function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict, backdated)
     if ns.Remote then
         local promoted, report = ns.Remote.Promote(ns.remote, ns.db.crates, zoneID, shardID)
         if promoted == "new" or promoted == "refined" then
-            ns.Print(("  |cff777777timer taken from %s, who saw it %s (via %s)|r"):format(
+            ns.Say(("  |cff777777timer taken from %s, who saw it %s (via %s)|r"):format(
                 report.from, report.stage, tostring(report.via)))
         end
         -- Their account of this crate has been overtaken by seeing it. Kept
@@ -191,7 +216,7 @@ function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict, backdated)
         local dx, dy = guess.x - pos.x, guess.y - pos.y
         local miss = math.sqrt(dx * dx + dy * dy) * 100
         local colour = miss <= 1 and "|cff33ff99" or (miss <= 3 and "|cffffd100" or "|cffff5555")
-        ns.Print(string.format("  predicted %.1f, %.1f -- %smissed by %.2f%% of map|r",
+        ns.Say(string.format("  predicted %.1f, %.1f -- %smissed by %.2f%% of map|r",
             guess.x * 100, guess.y * 100, colour, miss))
 
         -- Score the timing as well as the place. The first flight this ran on
@@ -207,7 +232,7 @@ function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict, backdated)
             if not acc.lo or err < acc.lo then acc.lo = err end
             if not acc.hi or err > acc.hi then acc.hi = err end
             ns.db.release[zoneID] = acc
-            ns.Print(("  release called at %ds, took %ds -- |cffffd100%+ds|r%s"):format(
+            ns.Say(("  release called at %ds, took %ds -- |cffffd100%+ds|r%s"):format(
                 math.floor(guess.toRelease + 0.5), math.floor(actual + 0.5), math.floor(err + 0.5),
                 acc.n > 1 and ("  |cff777777mean %+ds over %d|r"):format(
                     math.floor(acc.sum / acc.n + 0.5), acc.n) or ""))
@@ -221,13 +246,13 @@ function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict, backdated)
 
     local learned = ns.Learn.Note(ns.db.learned, zoneID, pos.x, pos.y)
     if learned == "learned" then
-        ns.Print(string.format(
+        ns.Say(string.format(
             "  |cff33ff99new drop spot learned|r -- %.1f, %.1f was not in the catalogue",
             pos.x * 100, pos.y * 100))
     elseif learned == "full" then
-        ns.Print("  |cffff8800this zone has hit its learned-spot cap|r")
+        ns.Say("  |cffff8800this zone has hit its learned-spot cap|r")
     elseif learned == "invalid" then
-        ns.Print(("  |cffff5555could not record this spot|r (store=%s, %.4f %.4f)"):format(
+        ns.Say(("  |cffff5555could not record this spot|r (store=%s, %.4f %.4f)"):format(
             type(ns.db.learned), pos.x, pos.y))
     end
 end
@@ -237,7 +262,7 @@ end
 -- whole reason for listening.
 function ns.OnSpawnAnnounced(zoneID, shardID, npcName, verdict)
     if verdict == "new" or verdict == "refined" then
-        ns.Print(("%s |cffffffffshard %s|r -- |cff33ff99%s announced a crate|r"):format(
+        ns.Say(("%s |cffffffffshard %s|r -- |cff33ff99%s announced a crate|r"):format(
             ns.GetZoneName(zoneID), tostring(shardID), npcName))
     else
         ns.Debug(("announcement in %s shard %s -> %s (timer left alone)"):format(
@@ -250,7 +275,7 @@ end
 -- bugging out as one did in Coiled Isle -- this is the only word the player
 -- gets about where it went.
 function ns.OnTransportArrived(zoneID, spot)
-    ns.Print(("|cff77dd77transport reached|r %.1f, %.1f in %s -- the crate should be there"):format(
+    ns.Say(("|cff77dd77transport reached|r %.1f, %.1f in %s -- the crate should be there"):format(
         spot.x * 100, spot.y * 100, ns.GetZoneName(zoneID)))
 end
 
@@ -261,12 +286,12 @@ function ns.OnDescentMeasured(zoneID, seconds, partial, dist)
     -- How far away it was watched from is on the line because that is the
     -- open question, and a reading nobody can see the distance of is a
     -- reading that cannot answer it.
-    ns.Print(("|cff33ff99descent measured|r in %s: |cffffd100%ds|r under the parachute%s%s"):format(
+    ns.Say(("|cff33ff99descent measured|r in %s: |cffffd100%ds|r under the parachute%s%s"):format(
         ns.GetZoneName(zoneID), math.floor(seconds + 0.5),
         dist and (" |cffffd100from %.1f%% away|r"):format(dist) or "",
         partial and " |cffff8800(joined mid-fall -- a lower bound, not counted)|r" or ""))
     if n > 1 then
-        ns.Print(("  %d %s: typically %ds, range %d-%d"):format(
+        ns.Say(("  %d %s: typically %ds, range %d-%d"):format(
             n, source == "pooled" and "across every zone, this one disagreeing with itself"
                 or "measured here",
             math.floor(mean + 0.5), math.floor(lo + 0.5), math.floor(hi + 0.5)))
@@ -278,12 +303,12 @@ end
 -- that ship a figure disagree about it, so it is worth saying out loud.
 function ns.OnGapObserved(zoneID, shardID, noted)
     local n, mean, lo, hi = ns.Timers.GapStats(ns.db.gaps, zoneID)
-    ns.Print(("|cff33ff99interval measured|r in %s shard %s: |cffffd100%ds|r%s"):format(
+    ns.Say(("|cff33ff99interval measured|r in %s shard %s: |cffffd100%ds|r%s"):format(
         ns.GetZoneName(zoneID), tostring(shardID), math.floor(noted.gap + 0.5),
         noted.cycles > 1 and (" over %d cycles = %ds each"):format(
             noted.cycles, math.floor(noted.per + 0.5)) or ""))
     if n > 1 then
-        ns.Print(("  %d observations here: mean %ds, range %d-%d  |cff777777(shipped %ds)|r"):format(
+        ns.Say(("  %d observations here: mean %ds, range %d-%d  |cff777777(shipped %ds)|r"):format(
             n, math.floor(mean + 0.5), math.floor(lo + 0.5), math.floor(hi + 0.5),
             ns.GetShippedInterval(zoneID)))
     end
@@ -329,7 +354,7 @@ function ns.SetCratePin(zoneID, x, y, quiet)
     local set = C_Map.GetUserWaypoint()
     if set then
         if not quiet then
-            ns.Print(("  |cff777777map pin set on %s|r"):format(ns.GetZoneName(zoneID)))
+            ns.Say(("  |cff777777map pin set on %s|r"):format(ns.GetZoneName(zoneID)))
         end
         -- The hyperlink describes whatever waypoint is currently set, not a
         -- point of our choosing, so it is read here and only when the readback
@@ -344,7 +369,7 @@ function ns.SetCratePin(zoneID, x, y, quiet)
         return true, link
     end
     local allowed = ns.PinAllowed(zoneID)
-    ns.Print(("  |cffff8800the map pin did not take|r |cff777777(the game %s allow one on %s)|r"):format(
+    ns.Say(("  |cffff8800the map pin did not take|r |cff777777(the game %s allow one on %s)|r"):format(
         allowed == nil and "will not say whether it would" or
             (allowed and "says it does" or "says it does not"),
         ns.GetZoneName(zoneID)))
@@ -357,12 +382,12 @@ end
 function ns.OnHovering(zoneID, spot, dist)
     ns.lastPrediction[zoneID] = { x = spot.x, y = spot.y, at = GetServerTime() }
     local descent, n = ns.Airtime.Descent(ns.db.descent, zoneID)
-    ns.Print(("|cffffd100circling|r |cffffd100%.1f, %.1f|r in %s -- dropping any moment,"
+    ns.Say(("|cffffd100circling|r |cffffd100%.1f, %.1f|r in %s -- dropping any moment,"
         .. " |cffffd100on the ground %ss later|r%s  |cff777777(%.1f%% off the spot)|r"):format(
         spot.x * 100, spot.y * 100, ns.GetZoneName(zoneID), math.floor(descent + 0.5),
         n == 0 and " |cff777777(descent not measured here yet)|r" or "", dist * 100))
     if not ns.db.waypoint then
-        ns.Print("  |cff777777no map pin: turned off in settings|r")
+        ns.Say("  |cff777777no map pin: turned off in settings|r")
     else
         pinCrate(zoneID, spot.x, spot.y)
     end
@@ -400,7 +425,7 @@ function ns.OnPrediction(zoneID, result, fit)
         rest = ("  |cff777777then %s on the same line|r"):format(table.concat(others, ", "))
     end
 
-    ns.Print(string.format(
+    ns.Say(string.format(
         "%s |cffffd100%.1f, %.1f|r in %s%s  |cff777777(%d%% sure, %.1f deg off, %d samples)|r%s",
         firm and "incoming to" or "probably", s.x * 100, s.y * 100,
         ns.GetZoneName(zoneID), when,
@@ -408,7 +433,7 @@ function ns.OnPrediction(zoneID, result, fit)
         math.deg(math.atan(result.aim.tan)), fit.n, rest))
 
     if not ns.db.waypoint then
-        ns.Print("  |cff777777no map pin: turned off in settings|r")
+        ns.Say("  |cff777777no map pin: turned off in settings|r")
     else
         -- Only a firm call is worth telling a raid about, and announcing sets
         -- the pin on the way, because the link it sends IS this client's

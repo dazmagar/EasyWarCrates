@@ -89,6 +89,14 @@ local function build()
         header("This build has no button widget -- use /ewc data")
     end
 
+    header("Chat")
+
+    checkbox("chatter", "Talk in chat",
+        "Report sightings, measurements and pins in chat as they happen. Off by "
+        .. "default: an addon that talks unprompted is one people route into a "
+        .. "spare tab. Everything it would have said is written to its own log "
+        .. "either way, and the /ewc commands always answer in full.")
+
     header("Diagnostics")
 
     checkbox("watch", "Narrate tracking",
