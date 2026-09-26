@@ -8,6 +8,8 @@ observable in a live raid. The rest are still parsed, so a syntax error shows
 up here rather than as a dead addon in the client.
 """
 import pathlib
+import re
+import subprocess
 import sys
 
 import lint
@@ -97,6 +99,55 @@ def run_specs() -> tuple[int, int]:
     return total_pass, total_fail
 
 
+# An upload token in a public repository is the one mistake here that cannot be
+# taken back by a commit: it has to be revoked and reissued. .gitignore is not
+# enough on its own -- `git add -f` ignores it, and `git add -A` has swept files
+# in twice on this project already -- so the suite refuses one outright.
+#
+# Shapes rather than entropy: a CurseForge or Wago upload token is a UUID and
+# reads as ordinary text, so what gives it away is the name it is assigned to.
+SECRET_SHAPES = [
+    (re.compile(r"(?:ghp|gho|ghs|ghu|ghr)_[A-Za-z0-9]{16,}"), "a GitHub token"),
+    (re.compile(r"github_pat_[A-Za-z0-9_]{20,}"), "a GitHub fine-grained token"),
+    (re.compile(
+        r"(CF_API_KEY|CF_API_TOKEN|WAGO_API_TOKEN|WOWI_API_TOKEN|GITHUB_OAUTH)"
+        r"\s*[:=]\s*[\"']?"
+        r"([0-9a-fA-F-]{8,}|[A-Za-z0-9._-]{12,})"),
+     "an upload token assigned in the clear"),
+]
+
+
+def tracked_files() -> list[pathlib.Path]:
+    out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True)
+    if out.returncode != 0:
+        return []
+    return [ROOT / line for line in out.stdout.splitlines() if line]
+
+
+def check_secrets() -> int:
+    found = 0
+    for path in tracked_files():
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue          # a screenshot is not going to hold a token
+        for pattern, what in SECRET_SHAPES:
+            for m in pattern.finditer(text):
+                # The workflow names these and reads them from secrets, which is
+                # the whole point of it -- that is not a leak.
+                if "${{" in m.group(0) or "secrets." in text[max(0, m.start() - 40):m.end() + 40]:
+                    continue
+                line = text.count("\n", 0, m.start()) + 1
+                rel = path.relative_to(ROOT).as_posix()
+                print(f"SECRET  {rel}:{line} looks like {what} -- revoke it and reissue")
+                found += 1
+    if not found:
+        print(f"ok   secrets                    {len(tracked_files())} tracked files, nothing token-shaped")
+    return found
+
+
 def main() -> int:
     # Windows hands stdout a cp1252 encoder, which raises on the first
     # non-ASCII character. A spec that fails on a Cyrillic announcer phrase
@@ -109,11 +160,13 @@ def main() -> int:
 
     syntax_bad = check_syntax()
     lint_bad = lint.main(ROOT, ADDON_FILES + GAME_ONLY_FILES)
+    secrets_bad = check_secrets()
     passed, failed = run_specs()
     print("-" * 58)
     print(f"{passed} passed, {failed} failed, "
-          f"{syntax_bad} syntax errors, {lint_bad} lint problems")
-    return 1 if (failed or syntax_bad or lint_bad) else 0
+          f"{syntax_bad} syntax errors, {lint_bad} lint problems"
+          + (f", {secrets_bad} leaked secrets" if secrets_bad else ""))
+    return 1 if (failed or syntax_bad or lint_bad or secrets_bad) else 0
 
 
 if __name__ == "__main__":
