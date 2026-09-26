@@ -72,6 +72,36 @@ local ALIAS = {
     [2536] = 2437,  -- second map id seen for Zul'Aman
 }
 
+-- Zone names as other clients broadcast them.
+--
+-- RCT posts its chat alert using the sender's own localised name, and the game
+-- will only ever tell a client the names in its own locale. So a German
+-- raider's report is unreadable here unless the name is written down, and one
+-- public raid dropped three of them.
+--
+-- Each was resolved from the wire, not translated. The name arrived carrying a
+-- shard, and that shard was one this client had independently confirmed for a
+-- zone in its own timers and phase memory at the same moment. The morphology
+-- agrees separately -- Leeren+sturm against Void+storm, Schlaechter+anhoehe
+-- against Slayer's+Rise -- which is two lines of evidence rather than one.
+--
+-- The weakness, stated because it is real: shard ids are not unique across
+-- zones, and Slayer's Rise is nested inside Voidstorm, so the records of
+-- untracked vignettes show both 45 and 63 under both names. What makes that
+-- tolerable is the shape of the mistake it could cause. Confusing these two
+-- sends somebody to a zone they are already standing in the parent of; the
+-- same error between Eversong and Harandar would send them across a continent.
+--
+-- Anything not listed is still collected rather than discarded: /ewc comm
+-- prints unresolved names with the shards they arrived with, which is how
+-- these two got here.
+local FOREIGN = {
+    ["Leerensturm"]      = 2405,   -- deDE Voidstorm, shard 63, 26 Sep
+    ["Schlächteranhöhe"] = 2444,   -- deDE Slayer's Rise, shard 45, 26 Sep
+}
+
+ns.ZONE_NAMES_FOREIGN = FOREIGN
+
 ns.ZONES = ZONES
 ns.ZONE_ALIAS = ALIAS
 

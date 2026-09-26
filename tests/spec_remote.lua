@@ -531,3 +531,62 @@ t.test("a decoded RCT spot goes through the same gate as any other", function()
     t.eq(Remote.Note(store, r, T0), "new")
     t.eq(Remote.Note(store, r, T0 + 9999), "stale")
 end)
+
+
+-- The line RCT posts every cycle, for every zone the raid is watching, taken
+-- verbatim from Dmitrii's raid on 26 Sep. Only the "Flying in X" alert was
+-- being read, so an hour of these kept none of his rows alive.
+local INTERVAL_OF = function() return 1100 end
+
+t.test("their countdown is a timer, and it is read", function()
+    local r = Remote.FromCountdown(
+        "Next Crate: Zul'Aman - 1258 in 02:46", "Loolara", BY_NAME, T0, INTERVAL_OF)
+    t.eq(r.zoneID, ZA)
+    t.eq(r.shardID, 1258)
+    t.eq(r.stage, "anchor", "their arithmetic, not a crate anybody has seen")
+    t.eq(r.via, "RCT")
+    t.eq(r.from, "Loolara")
+    -- 2:46 is 166 seconds off, so the spawn that puts the cycle in that phase
+    -- was one interval before the drop being announced.
+    t.eq(r.at, T0 + 166 - 1100)
+end)
+
+t.test("their last-call form counts too", function()
+    local r = Remote.FromCountdown(
+        "Next Crate: Harandar - 45 in - 20 s", "Loolara", BY_NAME, T0, INTERVAL_OF)
+    t.eq(r.zoneID, HA)
+    t.eq(r.shardID, 45)
+    t.eq(r.at, T0 + 20 - 1100)
+end)
+
+t.test("a countdown for a zone this client cannot name hands back both", function()
+    local r, name, shard = Remote.FromCountdown(
+        "Next Crate: Leerensturm - 63 in 01:50", "Loolara", BY_NAME, T0, INTERVAL_OF)
+    t.eq(r, nil)
+    t.eq(name, "Leerensturm")
+    t.eq(shard, 63, "so it can be filed against the shard it arrived with")
+end)
+
+t.test("ordinary raid chat is not a countdown", function()
+    for _, line in ipairs({
+        "we kill em. we strong",
+        "Hated Gaming - War Crate Alert! Flying in Zul'Aman - Shard: 1258",
+        "Next Crate: Zul'Aman - 1258",
+        "Next Crate: Zul'Aman in 02:46",
+    }) do
+        t.eq(Remote.FromCountdown(line, "Someone", BY_NAME, T0, INTERVAL_OF), nil, line)
+    end
+    t.eq(Remote.FromCountdown(nil, "Someone", BY_NAME, T0, INTERVAL_OF), nil)
+    t.eq(Remote.FromCountdown("Next Crate: Zul'Aman - 1258 in 02:46", "", BY_NAME, T0, INTERVAL_OF), nil)
+end)
+
+-- Their countdown has been seen reading a couple of minutes out. Past a whole
+-- cycle it is not counting down to the next drop, and an anchor built from it
+-- would put the phase somewhere it has never been.
+t.test("a countdown longer than the cycle is refused", function()
+    t.eq(Remote.FromCountdown(
+        "Next Crate: Zul'Aman - 1258 in 25:00", "Loolara", BY_NAME, T0, INTERVAL_OF), nil)
+    t.ok(Remote.FromCountdown(
+        "Next Crate: Zul'Aman - 1258 in 18:00", "Loolara", BY_NAME, T0, INTERVAL_OF),
+        "and one inside it is kept")
+end)

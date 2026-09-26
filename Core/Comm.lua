@@ -116,6 +116,11 @@ local function zoneNames()
         -- The shipped English name too, for a raid on mixed locales.
         zoneByName[ns.GetZoneName(zoneID)] = zoneID
     end
+    -- And the names other clients have actually been heard using, which no API
+    -- will hand this client: the game only knows its own locale.
+    for name, zoneID in pairs(ns.ZONE_NAMES_FOREIGN or {}) do
+        zoneByName[name] = zoneID
+    end
     return zoneByName
 end
 
@@ -227,6 +232,16 @@ function Comm.OnChat(text, sender, channel)
     local report, unresolved, shardID = ns.Remote.FromAlert(
         text, sender, zoneNames(), GetServerTime())
     if report then return take(report, channel) end
+
+    -- The other line they post, and the more useful of the two: it names a
+    -- zone, a shard and how long is left, every cycle, for every zone the raid
+    -- is watching. The alert only fires for the one that is happening now.
+    if not unresolved then
+        local soon, unread, shard = ns.Remote.FromCountdown(
+            text, sender, zoneNames(), GetServerTime(), ns.GetZoneInterval)
+        if soon then return take(soon, channel) end
+        unresolved, shardID = unread, shard
+    end
     if unresolved then
         -- Filed, not just logged. The log is a 400-line ring and these arrive
         -- in raids only, so a name that scrolls off is a name lost.

@@ -307,6 +307,57 @@ function Remote.FromAlert(text, sender, zoneByName, now)
     }
 end
 
+-- RCT's countdown line, posted to the raid every cycle:
+--
+--   Next Crate: Zul'Aman - 1258 in 02:46
+--   Next Crate: Slayer's Rise - 45 in - 20 s
+--
+-- Zone, shard and time remaining -- a timer, handed over in plain text, from
+-- whoever is leading. Only the "Flying in X" alert was being read, so a raid
+-- broadcasting this every cycle for an hour kept none of Dmitrii's rows alive
+-- while he sat in one zone and the rest aged out.
+--
+-- Turned into an anchor rather than a countdown, because that is what the rest
+-- of this addon speaks: a spawn one interval before the drop being announced
+-- puts the same cycle in the same phase, and everything downstream already
+-- knows what to do with a spawn.
+--
+-- Ranked as an anchor: it is their arithmetic, not a crate anybody has seen.
+local COUNTDOWN = "Next Crate:%s*(.-)%s*%-%s*(%d+)%s+in%s+(.+)$"
+
+-- "02:46", "00:31", and the last-call form "- 20 s".
+local function secondsFrom(text)
+    local mm, ss = text:match("^(%d+):(%d%d)")
+    if mm then return tonumber(mm) * 60 + tonumber(ss) end
+    local n = text:match("^%-?%s*(%d+)%s*s")
+    return n and tonumber(n) or nil
+end
+
+function Remote.FromCountdown(text, sender, zoneByName, now, intervalOf)
+    if type(text) ~= "string" or type(sender) ~= "string" or sender == "" then return nil end
+    local zoneName, shard, rest = text:match(COUNTDOWN)
+    if not zoneName then return nil end
+
+    local zoneID = zoneByName and zoneByName[zoneName]
+    if not zoneID then return nil, zoneName, tonumber(shard) end
+
+    local shardID, left = tonumber(shard), secondsFrom(rest)
+    if not shardID or not left then return nil end
+    -- Their countdown has been seen reading a couple of minutes out; anything
+    -- past one cycle is not a countdown to the next drop.
+    local interval = intervalOf and intervalOf(zoneID) or 1100
+    if left < 0 or left > interval then return nil end
+
+    return {
+        stage = "anchor",
+        zoneID = zoneID,
+        shardID = shardID,
+        at = (tonumber(now) or 0) + left - interval,
+        from = sender,
+        via = "RCT",
+    }
+end
+
 -- HGLog, the log RCT bundles, which shares in the clear on HGLOG1:
 --
 --   <ver>|<type>|<chunk>|<rows>      rows: zoneID,ts,shardID;zoneID,ts,shardID
