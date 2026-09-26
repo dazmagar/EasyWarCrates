@@ -1,4 +1,7 @@
-# 0.1.0
+# EasyWarCrates
+
+## [v0.1.0](https://github.com/dazmagar/EasyWarCrates/tree/v0.1.0) (2026-09-26)
+[Full Changelog](https://github.com/dazmagar/EasyWarCrates/commits/v0.1.0) [Previous Releases](https://github.com/dazmagar/EasyWarCrates/releases)
 
 First release.
 
