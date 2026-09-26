@@ -318,15 +318,20 @@ function Model.Announcement(row, now)
         return (ns.FormatClock(seconds):gsub("^%s+", ""))
     end
 
-    -- The chest, said the same way a crate on the ground is: no coordinates,
-    -- because the pin that travels with this points at the exact spot and a
-    -- pair of numbers beside it is the same fact twice. How long it has been
-    -- there is the part a reader weighs, since it only lasts a minute or two.
+    -- Coordinates spelled out, unlike a crate's. A crate line leans on the pin
+    -- that travels with it, and the pin can fail to produce a link -- the game
+    -- only hands one back when the waypoint readback agrees about the map. A
+    -- crate is still findable after that: it has a countdown and a zone. This
+    -- has neither. It lasts a minute or two, so a line that says only "in
+    -- Slayer's Rise" has told a reader nothing they can act on in time.
     local spectralLine = nil
     if row.spectral then
         local age = (now and row.spectral.since)
             and (" (%s so far)"):format(clock(now - row.spectral.since)) or ""
-        spectralLine = ("%s: SPECTRAL CHEST on the ground%s%s"):format(where, age, shard)
+        local at = (row.spectral.x and row.spectral.y)
+            and (" at %.1f, %.1f"):format(row.spectral.x * 100, row.spectral.y * 100) or ""
+        spectralLine = ("%s: SPECTRAL CHEST on the ground%s%s%s"):format(
+            where, at, age, shard)
     end
 
     -- Never echo the raid back at itself. A report carried by RCT arrived as a
@@ -339,6 +344,18 @@ function Model.Announcement(row, now)
     if live and live.via == "RCT" then
         if spectralLine then return spectralLine, "spectral" end
         return nil
+    end
+
+    -- Ranked by what can be taken now, not by which object is worth more.
+    --
+    -- A crate on the ground outranks the chest: both are there to collect and
+    -- the crate is why anyone is in the zone. A transport in the air does not,
+    -- and saying it did was wrong -- it means "in three minutes", while the
+    -- chest is on the ground and gone in one or two. Dmitrii clicked the
+    -- Slayer's Rise row with a chest lying in it and the raid was told about a
+    -- transport instead.
+    if live and live.phase ~= "ground" and spectralLine then
+        return spectralLine, "spectral"
     end
 
     if live then

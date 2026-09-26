@@ -45,10 +45,20 @@ ns.VIGNETTE_STAGE = STAGE
 -- if you are already there and too short to be worth telling anyone who is
 -- not. So: notice it, say where, and count it down. Nothing more.
 --
+-- What is documented, and it is not much: object 527903, added in 12.0.1, and
+-- it spawns every thirty minutes in Slayer's Rise for up to five players of
+-- either faction to loot before it despawns. Whether that half hour runs from
+-- the spawn or from the last loot is not said anywhere, nor is where in the
+-- zone it appears, nor how long it stays -- the wiki page does not even have a
+-- screenshot. So the thirty minutes is written here as the one figure with a
+-- source and nothing is built on it; the record of untracked vignettes
+-- measures the rest, which is the same way every interval in this addon was
+-- arrived at.
+--
 -- Untracked by RCT, WarCrateTracker and CrateTrackerZK alike, so this id has
 -- one source and /ewc scan is how it gets checked.
 local SPECTRAL = {
-    [6892] = true,
+    [6892] = true,   -- object 527903, documented at 30 minutes
 }
 
 ns.SPECTRAL = SPECTRAL

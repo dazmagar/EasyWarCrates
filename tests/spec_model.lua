@@ -531,6 +531,34 @@ t.test("a chest with no crate beside it is worth announcing on its own", functio
     t.eq(said:find("0.53", 1, true), nil, "no coordinates: the pin carries the spot")
 end)
 
+-- Ranked by what can be taken now. A transport in the air means three minutes
+-- from now; the chest is on the ground and gone in one or two. Ranking the
+-- transport first told a raid about a plane while a chest lay in the zone.
+t.test("a transport in the air does not outrank a chest on the ground", function()
+    for _, phase in ipairs({ "inbound", "falling" }) do
+        local said, subject = Model.Announcement(
+            { zoneID = SR, shardID = 45,
+              live = { phase = phase, toGround = 183 },
+              spectral = { since = T0, x = 0.692, y = 0.482 } }, T0 + 30)
+        t.ok(said:find("SPECTRAL CHEST", 1, true), phase .. ": " .. said)
+        t.eq(subject, "spectral", phase)
+    end
+end)
+
+-- It lasts a minute or two and has no countdown and no second chance, so a
+-- line saying only which zone has told the reader nothing they can use. A
+-- crate can lean on its pin because it is still findable without one.
+t.test("the chest is announced with its coordinates, not just its zone", function()
+    local said = Model.Announcement(
+        { zoneID = SR, shardID = 45, spectral = { since = T0, x = 0.692, y = 0.482 } }, T0 + 5)
+    t.ok(said:find("69.2, 48.2", 1, true), said)
+
+    local noPos = Model.Announcement(
+        { zoneID = SR, shardID = 45, spectral = { since = T0 } }, T0 + 5)
+    t.ok(noPos:find("SPECTRAL CHEST", 1, true), noPos)
+    t.eq(noPos:find("at ", 1, true), nil, "and says nothing it does not have")
+end)
+
 t.test("a crate we can see outranks the chest", function()
     local said, subject = Model.Announcement(
         { zoneID = SR, shardID = 39,
