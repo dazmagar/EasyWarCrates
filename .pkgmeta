@@ -1,5 +1,18 @@
 package-as: EasyWarCrates
 
+# Use the written changelog, not one generated from the log.
+#
+# Without this the packager summarises every commit since the previous tag, and
+# on a first release that is the whole history -- 106 of them, each an essay,
+# which came to more than the 125,000 characters GitHub accepts in a release
+# body. CurseForge and Wago took the upload and the GitHub release failed.
+#
+# The log is written for whoever maintains this. A release note is written for
+# whoever is deciding whether to install it, and they are not the same document.
+manual-changelog:
+    filename: CHANGELOG.md
+    markup-type: markdown
+
 # What the packager must leave out of the published addon. Everything here is
 # how the addon is built and reasoned about, not part of what the game loads:
 # tools/ deploys to one particular machine, tests/ and research/ never ship,
