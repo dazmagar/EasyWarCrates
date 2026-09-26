@@ -111,7 +111,7 @@ SECRET_SHAPES = [
     (re.compile(r"github_pat_[A-Za-z0-9_]{20,}"), "a GitHub fine-grained token"),
     (re.compile(
         r"(CF_API_KEY|CF_API_TOKEN|WAGO_API_TOKEN|WOWI_API_TOKEN|GITHUB_OAUTH)"
-        r"\s*[:=]\s*[\"']?"
+        r"[ \t]*[:=][ \t]*[\"']?"
         r"([0-9a-fA-F-]{8,}|[A-Za-z0-9._-]{12,})"),
      "an upload token assigned in the clear"),
 ]
