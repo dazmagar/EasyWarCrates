@@ -5,6 +5,7 @@
 ## Author: Dazm
 ## X-License: MIT
 ## X-Curse-Project-ID: 1712080
+## X-Wago-ID: aND9m26o
 ## SavedVariables: EasyWarCratesDB
 
 # Data and logic. Everything down to Track/Timers.lua loads under a plain Lua
