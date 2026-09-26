@@ -275,8 +275,25 @@ function Comm.Report(zoneID, shardID, stage, pos)
     if (now - (lastSent[key] or -math.huge)) < SEND_COOLDOWN then return end
     lastSent[key] = now
 
+    -- When the stage began, not when this was sent.
+    --
+    -- The receiver reads at as the moment the parachute opened and counts the
+    -- descent from it. Stamping the send time meant every re-send moved that
+    -- moment forward, so a crate that had been falling for two minutes read as
+    -- having just left the transport, over and over, and the row never
+    -- progressed. Dmitrii's friend's parachute arrived eight times in two
+    -- minutes and each one restarted his countdown.
+    --
+    -- Re-sending is worth keeping -- somebody who joined the group late has an
+    -- empty store and this is how it fills -- and with the real time on it a
+    -- re-send is simply ignored by anyone who already has it.
+    local live = ns.Scanner and ns.Scanner.LiveCrate and ns.Scanner.LiveCrate(zoneID)
+    local began = live and ((stage == "falling" and live.since)
+        or (ns.LANDED_STAGE[stage] and live.groundAt)) or nil
+
     local payload = ns.Remote.Encode({
-        stage = stage, zoneID = zoneID, shardID = shardID, at = GetServerTime(),
+        stage = stage, zoneID = zoneID, shardID = shardID,
+        at = began or GetServerTime(),
         x = pos and pos.x or nil, y = pos and pos.y or nil,
     })
     local channel = IsInRaid() and "RAID" or "PARTY"
