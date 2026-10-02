@@ -167,6 +167,12 @@ local PIN_MOVED = 0.004
 -- however small the drift.
 local function pinCrate(zoneID, x, y, always)
     if not ns.db.waypoint then return end
+    -- A closed window is the player saying they are not doing this right now,
+    -- and a pin is not a quiet thing: it takes the map marker and the minimap
+    -- arrow with it, so the addon would be steering somebody who has put it
+    -- away. Only the pins this addon places by itself: /ewc pin and announcing
+    -- a row are the player asking, and those still work with the window shut.
+    if ns.db.windowShown == false then return end
     local prev = pinnedAt[zoneID]
     local moved = not prev
         or math.abs(prev.x - x) > PIN_MOVED or math.abs(prev.y - y) > PIN_MOVED

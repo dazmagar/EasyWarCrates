@@ -50,7 +50,8 @@ local function build()
     checkbox("waypoint", "Set a map pin",
         "Drop a waypoint on the predicted landing spot once the call is confident. "
         .. "Nothing is placed while the call is still uncertain -- a pin in the wrong "
-        .. "place is worse than none.")
+        .. "place is worse than none, and nothing is placed while the tracker window "
+        .. "is closed. /ewc pin and clicking a row still work either way.")
 
     checkbox("share", "Tell your group what you see",
         "Send your own sightings to your party or raid, so anyone else running this "
