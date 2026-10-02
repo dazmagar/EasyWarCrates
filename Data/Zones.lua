@@ -79,28 +79,50 @@ local ALIAS = {
 -- raider's report is unreadable here unless the name is written down, and one
 -- public raid dropped three of them.
 --
--- Each was resolved from the wire, not translated. The name arrived carrying a
--- shard, and that shard was one this client had independently confirmed for a
--- zone in its own timers and phase memory at the same moment. The morphology
--- agrees separately -- Leeren+sturm against Void+storm, Schlaechter+anhoehe
--- against Slayer's+Rise -- which is two lines of evidence rather than one.
+-- Resolved from the wire, not translated. The name arrived carrying a shard,
+-- and that shard was one this client had independently confirmed for a zone in
+-- its own timers and phase memory. Five of the nine heard so far land on a
+-- shard that appears under exactly one zone, so those bindings are read rather
+-- than inferred.
 --
 -- The weakness, stated because it is real: shard ids are not unique across
--- zones, and Slayer's Rise is nested inside Voidstorm, so the records of
--- untracked vignettes show both 45 and 63 under both names. What makes that
--- tolerable is the shape of the mistake it could cause. Confusing these two
--- sends somebody to a zone they are already standing in the parent of; the
--- same error between Eversong and Harandar would send them across a continent.
+-- zones, and Slayer's Rise is nested inside Voidstorm, so 39 and 45 both show
+-- up under Harandar and Slayer's Rise alike. The three Slayer's Rise names
+-- rest on morphology and on elimination instead -- every other Midnight zone's
+-- name in those locales is accounted for here, and Harandar is a proper noun
+-- no locale translates. What makes that tolerable is the shape of the mistake
+-- it could cause: confusing these two sends somebody to a zone they are
+-- already standing in the parent of, where the same error between Eversong and
+-- Harandar would send them across a continent.
 --
 -- Anything not listed is still collected rather than discarded: /ewc comm
 -- prints unresolved names with the shards they arrived with, which is how
--- these two got here.
+-- every one of these got here.
 local FOREIGN = {
-    ["Leerensturm"]      = 2405,   -- deDE Voidstorm, shard 63, 26 Sep
-    ["Schlächteranhöhe"] = 2444,   -- deDE Slayer's Rise, shard 45, 26 Sep
+    ["Immersangwald"]            = 2395,  -- deDE Eversong, shard 5
+    ["Bois des Chants éternels"] = 2395,  -- frFR Eversong, shards 9681 and 5
+    ["Leerensturm"]              = 2405,  -- deDE Voidstorm, shard 63
+    ["Tempête du Vide"]          = 2405,  -- frFR Voidstorm, shard 63
+    ["Île Annelée"]              = 2512,  -- frFR Coiled Isle, shard 9278
+    ["Schlächteranhöhe"]         = 2444,  -- deDE Slayer's Rise, shard 45
+    ["Colline Meurtrière"]       = 2444,  -- frFR Slayer's Rise, shard 39
+    ["Зубец убийцы"]             = 2444,  -- ruRU Slayer's Rise, no shard
 }
 
 ns.ZONE_NAMES_FOREIGN = FOREIGN
+
+-- One name can arrive spelled two ways. "Zul'Aman" came in six times as
+-- "Zul’Aman" -- the same name, from a client that writes the typographic
+-- apostrophe -- and a plain table index missed every one, filing as foreign a
+-- zone this addon has always known. Both curly forms fold to the straight one,
+-- on the way into the lookup table and on the way out.
+function ns.NameKey(name)
+    if type(name) ~= "string" then return name end
+    -- Matched as sequences, not as a byte class: Lua patterns are bytes, and
+    -- a class holding these would also eat the 0x80 continuation byte out of
+    -- unrelated letters.
+    return (name:gsub("’", "'"):gsub("‘", "'"))
+end
 
 ns.ZONES = ZONES
 ns.ZONE_ALIAS = ALIAS

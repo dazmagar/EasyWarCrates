@@ -363,7 +363,7 @@ function Remote.FromAlert(text, sender, zoneByName, now)
     -- Not resolved from the shard automatically: shard 39 has been seen in
     -- Harandar, Slayer's Rise and Voidstorm, so a low id matches more than one
     -- zone and a wrong binding is worse than an unread name.
-    local zoneID = zoneByName and zoneByName[zoneName]
+    local zoneID = zoneByName and zoneByName[ns.NameKey(zoneName)]
     if not zoneID then return nil, zoneName, shardID end
     if not shardID then return nil, zoneName end
 
@@ -408,7 +408,7 @@ function Remote.FromCountdown(text, sender, zoneByName, now, intervalOf)
     local zoneName, shard, rest = text:match(COUNTDOWN)
     if not zoneName then return nil end
 
-    local zoneID = zoneByName and zoneByName[zoneName]
+    local zoneID = zoneByName and zoneByName[ns.NameKey(zoneName)]
     if not zoneID then return nil, zoneName, tonumber(shard) end
 
     local shardID, left = tonumber(shard), secondsFrom(rest)

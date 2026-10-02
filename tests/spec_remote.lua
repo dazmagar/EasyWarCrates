@@ -259,6 +259,23 @@ t.test("a readable name still wins, and a missing shard still refuses", function
     t.eq(shard2, nil, "nothing to file it against, and it says so rather than inventing one")
 end)
 
+-- Not a locale gap at all. Six reports of Zul'Aman were filed as a foreign
+-- name because the sender's client writes the typographic apostrophe and a
+-- plain table index is byte-exact.
+t.test("a curly apostrophe still resolves to the zone this client knows", function()
+    local r = Remote.FromAlert(
+        "Hated Gaming - War Crate Alert! Flying in Zul’Aman - Shard: 34020",
+        "Sender", BY_NAME, T0)
+    t.ok(r, "the name differs from ours by one character and means the same zone")
+    t.eq(r.zoneID, ZA)
+    t.eq(r.shardID, 34020)
+
+    local c = Remote.FromCountdown(
+        "Next Crate: Zul’Aman - 34020 in 02:46", "Sender", BY_NAME, T0, INTERVAL_OF)
+    t.ok(c, "and the countdown line reads it too")
+    t.eq(c.zoneID, ZA)
+end)
+
 t.test("ordinary raid chat is not an alert", function()
     t.eq(Remote.FromAlert("anyone got a summon", "Someone", BY_NAME, T0), nil)
     t.eq(Remote.FromAlert("Flying in Harandar", "Someone", BY_NAME, T0), nil)

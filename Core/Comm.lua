@@ -112,14 +112,14 @@ local function zoneNames()
     zoneByName = {}
     for zoneID in pairs(ns.ZONES) do
         local info = C_Map.GetMapInfo(zoneID)
-        if info and info.name then zoneByName[info.name] = zoneID end
+        if info and info.name then zoneByName[ns.NameKey(info.name)] = zoneID end
         -- The shipped English name too, for a raid on mixed locales.
-        zoneByName[ns.GetZoneName(zoneID)] = zoneID
+        zoneByName[ns.NameKey(ns.GetZoneName(zoneID))] = zoneID
     end
     -- And the names other clients have actually been heard using, which no API
     -- will hand this client: the game only knows its own locale.
     for name, zoneID in pairs(ns.ZONE_NAMES_FOREIGN or {}) do
-        zoneByName[name] = zoneID
+        zoneByName[ns.NameKey(name)] = zoneID
     end
     return zoneByName
 end
