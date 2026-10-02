@@ -357,11 +357,20 @@ end
 -- Deduplicated by GUID, because a vignette stays drawn for minutes and every
 -- poll would otherwise count as another spawn. The shard rides along with each
 -- sighting so an interval can be paired within one copy of a zone.
-local STRANGER_IDS, STRANGER_SEEN = 30, 16
+local STRANGER_IDS, STRANGER_SEEN = 60, 16
 
--- Distinct NPC names kept. A crate zone has a handful that ever speak, so this
--- is a ceiling against a surprise rather than a budget.
-local UNKNOWN_SPEAKERS = 12
+-- Distinct NPC names kept, so a locale whose announcers are not written down
+-- can still see who spoke.
+local UNKNOWN_SPEAKERS = 40
+
+-- Both were meant as a ceiling against a surprise and both reached it and sat
+-- there: 30 of 30 ids and 12 of 12 names on 2 Oct, every later find refused in
+-- silence. Raised against what they cost in the saved variables, 994 bytes per
+-- id and 173 per name, so this headroom is about 30KB and 5KB. /ewc scan seen
+-- and /ewc yells now say when a store is at its cap -- the silence was the
+-- bug, not the number.
+Scanner.STRANGER_IDS = STRANGER_IDS
+Scanner.UNKNOWN_SPEAKERS = UNKNOWN_SPEAKERS
 
 local function countKeys(t)
     local n = 0

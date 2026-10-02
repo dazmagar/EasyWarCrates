@@ -113,6 +113,10 @@ local function strangerHistory()
 
     ns.Print(("|cff777777seen before and not tracked -- %d id%s:|r"):format(
         #ids, #ids == 1 and "" or "s"))
+    if #ids >= ns.Scanner.STRANGER_IDS then
+        ns.Print(("|cffff8800that is the cap (%d) -- any new id is being dropped."
+            .. " /ewc scan reset empties it.|r"):format(ns.Scanner.STRANGER_IDS))
+    end
     for _, id in ipairs(ids) do
         local rec = ns.db.strangers[id]
         ns.Print(("  id=|cffffd100%s|r %s |cff777777x%d, atlas %s|r"):format(
@@ -434,32 +438,37 @@ HANDLERS.yells = function()
     ns.Print("listening for: " .. table.concat(names, ", "))
 
     local heard = ns.Scanner.heard or {}
+    -- Deliberately not a return. The unresolved speakers printed below are the
+    -- explanation for an empty list on a locale whose announcer names are not
+    -- written down -- and on those clients heard is empty for exactly that
+    -- reason, so returning here withheld the diagnosis from the only players
+    -- who needed it.
     if #heard == 0 then
-        return ns.Print("|cff777777none of them has said anything yet. They speak when a cycle"
+        ns.Print("|cff777777none of them has said anything yet. They speak when a cycle"
             .. " starts, so this stays empty until you sit through one.|r")
-    end
-
-    local now = GetServerTime()
-    for i = 1, #heard do
-        local h = heard[i]
-        local what = h.anchored and "|cff33ff99anchored the timer|r"
-            or h.matched and "|cffff8800recognised but not timed|r"
-            or "|cffff8800not recognised|r"
-        ns.Print(("%s |cff777777%ds ago, %s|r"):format(what, now - h.at,
-            h.zoneID and ns.GetZoneName(h.zoneID) or "not a tracked zone"))
-        ns.Print(("   %s: %s"):format(tostring(h.npc), tostring(h.text)))
-        -- The shard has to come out of the speaker's own GUID and the first
-        -- live announcement gave none, so the GUID is shown whenever it did
-        -- not yield one.
-        if h.matched and not h.anchored then
-            ns.Print(("   |cff777777shard=%s, guid=%s, a creature nearby says %s|r"):format(
-                tostring(h.shard), tostring(h.guid), tostring(h.unitShard)))
-            ns.Print("   |cff777777a creature's number and a crate vignette's number are not"
-                .. " the same thing -- /ewc shard compares them|r")
+    else
+        local now = GetServerTime()
+        for i = 1, #heard do
+            local h = heard[i]
+            local what = h.anchored and "|cff33ff99anchored the timer|r"
+                or h.matched and "|cffff8800recognised but not timed|r"
+                or "|cffff8800not recognised|r"
+            ns.Print(("%s |cff777777%ds ago, %s|r"):format(what, now - h.at,
+                h.zoneID and ns.GetZoneName(h.zoneID) or "not a tracked zone"))
+            ns.Print(("   %s: %s"):format(tostring(h.npc), tostring(h.text)))
+            -- The shard has to come out of the speaker's own GUID and the first
+            -- live announcement gave none, so the GUID is shown whenever it did
+            -- not yield one.
+            if h.matched and not h.anchored then
+                ns.Print(("   |cff777777shard=%s, guid=%s, a creature nearby says %s|r"):format(
+                    tostring(h.shard), tostring(h.guid), tostring(h.unitShard)))
+                ns.Print("   |cff777777a creature's number and a crate vignette's number are not"
+                    .. " the same thing -- /ewc shard compares them|r")
+            end
         end
+        ns.Print("|cff777777not recognised is either idle chatter or wording this locale needs"
+            .. " adding -- worth sending on if a cycle really started.|r")
     end
-    ns.Print("|cff777777not recognised is either idle chatter or wording this locale needs"
-        .. " adding -- worth sending on if a cycle really started.|r")
 
     -- The gap that would otherwise be invisible. Announcer names are localised
     -- as much as their lines are, and only English and Russian are written
@@ -475,6 +484,10 @@ HANDLERS.yells = function()
     ns.Print(("|cffff8800%d other NPC%s spoken in a crate zone and %s not known"
         .. " announcers:|r"):format(#strangers, #strangers == 1 and " has" or "s have",
         #strangers == 1 and "is" or "are"))
+    if #strangers >= ns.Scanner.UNKNOWN_SPEAKERS then
+        ns.Print(("|cffff8800that is the cap (%d) -- any further name is being"
+            .. " dropped.|r"):format(ns.Scanner.UNKNOWN_SPEAKERS))
+    end
     for i = 1, math.min(#strangers, 6) do
         local e = strangers[i]
         ns.Print(("   %s |cff777777x%d in %s|r"):format(
