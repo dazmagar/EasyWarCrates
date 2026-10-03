@@ -127,10 +127,12 @@ end
 local function take(report, channel)
     report.leader = report.leader or leads(report.from) or nil
     local verdict = ns.Remote.Note(ns.remote, report, GetServerTime())
+    local live = ns.Scanner and ns.Scanner.LiveCrate and ns.Scanner.LiveCrate(report.zoneID)
+    local inView = ns.Remote.AlreadySeen(live, report)
     log({ via = report.via, from = report.from, channel = channel,
           text = ("%s in %s shard %s"):format(report.stage,
               ns.GetZoneAbbr(report.zoneID), tostring(report.shardID)),
-          verdict = verdict })
+          verdict = verdict, inView = inView or nil })
     if verdict == "new" or verdict == "refresh" then
         if ns.RefreshWindow then ns.RefreshWindow() end
     end
@@ -140,12 +142,19 @@ local function take(report, channel)
     -- reached disk, so after the fact there was no way to tell "nobody is
     -- broadcasting" from "we heard them and did nothing". A refresh of the
     -- same crate stays quiet; so does a player merely reporting where they
-    -- stand, which is bookkeeping rather than news.
+    -- stand, which is bookkeeping rather than news, and so does a crate this
+    -- client can see for itself.
     if verdict == "new" and ns.Remote.RANK[report.stage] then
-        ns.Print(("|cff33ddaa%s|r says a crate is %s in |cffffd100%s|r"
-            .. " |cff777777(shard %s, heard through %s)|r"):format(
-            tostring(report.from), report.stage, ns.GetZoneName(report.zoneID),
-            tostring(report.shardID), tostring(report.via)))
+        if inView then
+            ns.Debug(("%s reports the crate already in view in %s shard %s"):format(
+                tostring(report.from), ns.GetZoneAbbr(report.zoneID),
+                tostring(report.shardID)))
+        else
+            ns.Print(("|cff33ddaa%s|r says a crate is %s in |cffffd100%s|r"
+                .. " |cff777777(shard %s, heard through %s)|r"):format(
+                tostring(report.from), report.stage, ns.GetZoneName(report.zoneID),
+                tostring(report.shardID), tostring(report.via)))
+        end
     elseif verdict == "new" then
         ns.Debug(("%s is in %s shard %s"):format(tostring(report.from),
             ns.GetZoneAbbr(report.zoneID), tostring(report.shardID)))

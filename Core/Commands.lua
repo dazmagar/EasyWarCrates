@@ -420,9 +420,9 @@ HANDLERS.comm = function()
     local now = GetServerTime()
     for i = 1, #heard do
         local h = heard[i]
-        ns.Print(("|cff777777%3ds|r [%s] |cffffffff%s|r %s |cff777777(%s)|r"):format(
+        ns.Print(("|cff777777%3ds|r [%s] |cffffffff%s|r %s |cff777777(%s%s)|r"):format(
             now - h.at, tostring(h.via), tostring(h.from), tostring(h.text),
-            tostring(h.verdict)))
+            tostring(h.verdict), h.inView and ", in view -- not announced" or ""))
     end
 end
 

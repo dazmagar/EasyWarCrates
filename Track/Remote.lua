@@ -467,6 +467,24 @@ end
 --
 -- Only retired by a stage at least as far along. A scout watching a parachute
 -- knows more than this client watching the transport that dropped it.
+-- Their report is about a crate this client is looking at, which makes
+-- repeating it noise: the row, the pin and this client's own line are already
+-- there.
+--
+-- Needed because Supersede, below, drops their report the moment this client
+-- sees the crate. Their next re-send then lands in an empty store and Note
+-- rightly calls it new -- so the store cannot be what decides whether to speak,
+-- and what this client can see has to be. Dmitrii caught it on 2 Oct: three
+-- "falling in SR shard 12561 (new)" twenty seconds apart, one parachute, three
+-- chat lines about a crate he was standing under.
+--
+-- One shard of one zone holds one crate, so the shard matching is the test.
+function Remote.AlreadySeen(live, report)
+    if type(live) ~= "table" or type(report) ~= "table" then return false end
+    if live.shard == nil or report.shardID == nil then return false end
+    return live.shard == report.shardID
+end
+
 function Remote.Supersede(store, zoneID, shardID, stage)
     local shards = store and store[zoneID]
     local entry = shards and shards[shardID]

@@ -259,6 +259,41 @@ t.test("a readable name still wins, and a missing shard still refuses", function
     t.eq(shard2, nil, "nothing to file it against, and it says so rather than inventing one")
 end)
 
+-- Measured from Dmitrii's /ewc comm on 2 Oct: three "falling in SR shard
+-- 12561 (new)" twenty seconds apart, one parachute, one sender. Every one of
+-- them printed a chat line about a crate he was standing under.
+--
+-- Supersede is why. It drops their report the moment this client sees the
+-- crate for itself, so the next re-send lands in an empty slot and counts as
+-- news. Note cannot tell that apart on its own -- the store really is empty --
+-- so the test is whether this client can see the crate.
+t.test("a crate this client can see makes their report redundant", function()
+    local live = { zoneID = ZA, shard = 7, phase = "falling", since = T0 }
+    t.ok(Remote.AlreadySeen(live, { zoneID = ZA, shardID = 7, stage = "falling" }),
+        "same zone, same shard, so it is the crate in front of us")
+
+    t.eq(Remote.AlreadySeen(live, { zoneID = ZA, shardID = 8, stage = "falling" }), false,
+        "another shard is another copy of the zone and another crate")
+    t.eq(Remote.AlreadySeen(nil, { zoneID = ZA, shardID = 7, stage = "falling" }), false,
+        "nothing in view, so their report is the only thing there is")
+    t.eq(Remote.AlreadySeen({ zoneID = ZA }, { zoneID = ZA, shardID = 7 }), false,
+        "a sighting with no shard yet cannot be matched to one")
+end)
+
+-- The sequence from that log, start to finish, so the next person reading it
+-- can see why a re-send comes back as new rather than as a refresh.
+t.test("their re-send comes back as new once we have seen the crate", function()
+    local store = Remote.New()
+    local report = { stage = "falling", zoneID = ZA, shardID = 7, at = T0, from = "Scout" }
+    t.eq(Remote.Note(store, report, T0), "new")
+
+    t.ok(Remote.Supersede(store, ZA, 7, "falling"), "seeing it drops their account")
+
+    local again = { stage = "falling", zoneID = ZA, shardID = 7, at = T0 + 20, from = "Scout" }
+    t.eq(Remote.Note(store, again, T0 + 20), "new",
+        "the store is empty, so Note is right and the caller has to be the one to stay quiet")
+end)
+
 -- Not a locale gap at all. Six reports of Zul'Aman were filed as a foreign
 -- name because the sender's client writes the typographic apostrophe and a
 -- plain table index is byte-exact.
