@@ -498,3 +498,41 @@ t.test("the correction the window applies is the zone's own", function()
     t.near(eta.bias, 12, 1e-6, "not the 42 the pool would have given")
     t.near(eta.toRelease, 50 + 12, 1e-6)
 end)
+
+-- db.linger held nothing after eighteen claims on 2 Oct. Not a tuning problem:
+-- the sum needs the claim and the last sighting, a zone change clears both, and
+-- looting a crate and flying on is a zone change. The floor is what is really
+-- available, so it is what gets taken.
+t.test("walking away from a claimed crate records a floor, not nothing", function()
+    local store = {}
+    local live = { [ZONE] = { mine = true, claimedAt = 1000, seen = 1042 } }
+
+    t.eq(Airtime.NoteAbandonedClaims(store, live), 1)
+    t.eq(#store[ZONE], 1)
+    t.eq(store[ZONE][1].secs, 42)
+    t.ok(store[ZONE][1].partial, "the marker was still drawn, so this is a lower bound")
+end)
+
+t.test("a floor is kept out of the figure and counted", function()
+    local store = {}
+    -- Three real readings that agree, and one floor that does not.
+    for _, secs in ipairs({ 70, 72, 74 }) do Airtime.NoteLinger(store, ZONE, secs) end
+    Airtime.NoteLinger(store, ZONE, 9, true)
+
+    local typical, n, _, _, source = Airtime.Linger(store, ZONE)
+    t.eq(n, 3, "the floor is not one of the readings the figure is drawn from")
+    t.ok(typical and typical >= 70 and typical <= 74, "so the figure is the real cluster")
+    t.eq(source, "zone")
+end)
+
+t.test("nothing to measure from is not a reading", function()
+    local store = {}
+    -- Nothing was ever claimed here, so there is no start to measure from.
+    t.eq(Airtime.NoteAbandonedClaims(store, { [ZONE] = { mine = true, seen = 1042 } }), 0)
+    -- Claimed, but never seen since, so there is no end either.
+    t.eq(Airtime.NoteAbandonedClaims(store, { [ZONE] = { mine = true, claimedAt = 1000 } }), 0)
+    -- The marker was the other side's, so it is not ours to time.
+    t.eq(Airtime.NoteAbandonedClaims(store,
+        { [ZONE] = { claimedAt = 1000, seen = 1042 } }), 0)
+    t.eq(next(store), nil)
+end)

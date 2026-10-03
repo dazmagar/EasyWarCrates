@@ -283,16 +283,18 @@ end
 -- Held with a timestamp because the shard re-rolls when you leave and come
 -- back, and one remembered from the last visit would anchor a timer to a copy
 -- of the zone nobody is standing in.
--- When this client's own faction was last seen to claim a crate in a zone.
+-- Which side claimed a crate lives on the live record itself, as mine and
+-- claimedAt. There was a second table beside it holding the claim time per
+-- zone, and it timed nothing: it was reassigned on every sighting of the
+-- marker, so the interval it produced was the gap between two polls rather
+-- than the life of the claim. The record's own claimedAt is written once, the
+-- way this always needed it to be, and is what Model already reads.
 --
 -- The game draws only your own side's claimed marker, so the marker appearing
 -- means your side took it, and the marker never appearing means the other side
 -- did. The second half is the useful one: without it a crate taken by the
 -- enemy simply vanishes, and the window goes on saying ON THE GROUND to
 -- somebody who would cross a zone for it.
-local claimedByUs = {}
-local CLAIM_MEMORY = 120
-
 local shardSeen = {}
 local SHARD_FRESH = 300
 
@@ -581,7 +583,12 @@ function Scanner.Reset()
     -- stand still, which this keeps it to.
     shardSeen = {}
     shardChangedAt = {}
-    claimedByUs = {}
+
+    -- Claimed crates the player is walking away from: the floor is taken here
+    -- because this is the last moment the record still exists. Why it has to
+    -- be a floor is in Airtime.NoteAbandonedClaims.
+    ns.Airtime.NoteAbandonedClaims(ns.db and ns.db.linger, liveCrate)
+
     liveCrate = {}
     stopPolling()
 end
@@ -803,16 +810,17 @@ function Scanner.OnVignettesUpdated()
         -- How long it stayed after our side claimed it. Nobody has measured
         -- this, so it is collected before it is ever shown.
         --
-        -- Dated from the last sighting throughout, and that "throughout" is
-        -- the fix. The grace above is this client waiting, not the crate lying
-        -- there, and asking from now instead cost this store every reading it
-        -- was built to hold: a claimed crate is not believed gone for
-        -- LIVE_STALE (90s) and the claim was only allowed to be CLAIM_MEMORY
-        -- (120s) old, so a marker had to vanish within thirty seconds of the
-        -- claim to count at all -- while whether it outlasts the claim is the
-        -- entire question. Empty for days, and nothing said so.
-        local lingered = claimedByUs[zoneID] and ((lost.seen or stamp) - claimedByUs[zoneID])
-        local ours = lingered ~= nil and lingered < CLAIM_MEMORY
+        -- Dated from the last sighting, not from now: the grace above is this
+        -- client waiting, not the crate lying there.
+        --
+        -- The marker went away while the player was still in the zone, so this
+        -- is the figure and not a floor -- Scanner.Reset takes the floor for a
+        -- crate walked away from. Airtime.NoteLinger's own bounds decide
+        -- whether it is plausible; a second, tighter test here refused
+        -- anything over two minutes, and whether it outlasts two minutes is
+        -- the question being asked.
+        local ours = lost.mine and lost.claimedAt ~= nil
+        local lingered = ours and ((lost.seen or stamp) - lost.claimedAt) or nil
         if ours then
             if ns.Airtime.NoteLinger(db.linger, zoneID, lingered) then
                 ns.Debug(("claimed crate in %s lasted %ds"):format(
@@ -954,7 +962,6 @@ function Scanner.OnVignettesUpdated()
                             local okF, mine = pcall(UnitFactionGroup, "player")
                             local side = (okF and type(mine) == "string" and mine ~= "")
                                 and mine or "your side"
-                            claimedByUs[zoneID] = stamp
 
                             -- Not gone. The marker flags which side captured
                             -- it, and a crate captured by your own side is

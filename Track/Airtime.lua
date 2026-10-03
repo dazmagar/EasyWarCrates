@@ -281,13 +281,17 @@ end
 local LINGER_MIN, LINGER_MAX = 5, 600
 Airtime.LINGER_MIN, Airtime.LINGER_MAX = LINGER_MIN, LINGER_MAX
 
-function Airtime.NoteLinger(store, zoneID, seconds)
+-- partial means the marker was still being drawn when the measurement
+-- stopped, because the player left the zone. That is a floor and not the
+-- figure, so it is kept and flagged and left out of the estimate, the same way
+-- a transport caught mid-air is.
+function Airtime.NoteLinger(store, zoneID, seconds, partial)
     if type(store) ~= "table" or not zoneID then return nil end
     seconds = tonumber(seconds)
     if not seconds or seconds < LINGER_MIN or seconds > LINGER_MAX then return nil end
     local list = store[zoneID]
     if type(list) ~= "table" then list = {}; store[zoneID] = list end
-    list[#list + 1] = { secs = seconds }
+    list[#list + 1] = { secs = seconds, partial = partial or nil }
     while #list > 40 do table.remove(list, 1) end
     return list[#list]
 end
@@ -298,6 +302,29 @@ end
 -- Neither half holds here: 60 and 400 disagree plainly, and there is no
 -- shipped guess to beat because nobody has measured this. So this waits for a
 -- cluster and says nothing until it has one.
+-- Floors for claimed crates the player is walking away from.
+--
+-- Measuring when the marker goes away needs somebody standing in the zone for
+-- a minute and a half after looting, and that is not what farming looks like:
+-- eighteen claims on 2 Oct produced eighteen zone changes and an empty store,
+-- because leaving the zone clears both halves of the sum. So the floor is
+-- taken at the last moment both halves exist.
+--
+-- The marker was still being drawn when the player left, so each is "at least
+-- this long" and goes in flagged partial. Returns how many it recorded.
+function Airtime.NoteAbandonedClaims(store, live)
+    if type(live) ~= "table" then return 0 end
+    local taken = 0
+    for zoneID, crate in pairs(live) do
+        if crate.mine and tonumber(crate.claimedAt) and tonumber(crate.seen) then
+            if Airtime.NoteLinger(store, zoneID, crate.seen - crate.claimedAt, true) then
+                taken = taken + 1
+            end
+        end
+    end
+    return taken
+end
+
 function Airtime.Linger(store, zoneID)
     local typical, n, lo, hi, _, _, source = describe(store, zoneID, 0)
     if source == "guess" or n < CLUSTER_MIN then return nil, n, lo, hi, source end
