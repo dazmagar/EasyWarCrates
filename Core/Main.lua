@@ -177,12 +177,28 @@ local function pinCrate(zoneID, x, y, always)
     -- away. Only the pins this addon places by itself: /ewc pin and announcing
     -- a row are the player asking, and those still work with the window shut.
     if ns.db.windowShown == false then return end
-    local prev = pinnedAt[zoneID]
-    local moved = not prev
-        or math.abs(prev.x - x) > PIN_MOVED or math.abs(prev.y - y) > PIN_MOVED
-    if not (moved or always) then return end
+
+    -- Whether to place it is asked of the game, not of this addon's memory of
+    -- where it last put one.
+    --
+    -- The game holds exactly one user waypoint. The memory was kept per zone,
+    -- so a pin placed in another zone since had silently replaced this zone's
+    -- -- and this test then refused to put it back, because as far as it knew
+    -- the pin was already there. Voidstorm's drop point repeats: 38.2, 56.8
+    -- three cycles running on 2 Oct, and the third went unmarked for the whole
+    -- flight while the one waypoint sat in Slayer's Rise.
+    local set = C_Map.GetUserWaypoint and C_Map.GetUserWaypoint()
+    local at = set and set.position
+    local there = set and set.uiMapID == zoneID and at
+        and math.abs(at.x - x) <= PIN_MOVED and math.abs(at.y - y) <= PIN_MOVED
+    if there and not always then return end
+
+    -- Saying so is still once per zone. A crate under its parachute drifts,
+    -- so the pin follows it for the whole descent, and a line each time filled
+    -- the chat with forty identical ones in eighty seconds.
+    local said = pinnedAt[zoneID] ~= nil
     pinnedAt[zoneID] = { x = x, y = y }
-    return ns.SetCratePin(zoneID, x, y, prev ~= nil)
+    return ns.SetCratePin(zoneID, x, y, said)
 end
 
 -- Every sighting of a crate's own vignette. This is the truth the prediction
