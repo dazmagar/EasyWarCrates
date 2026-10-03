@@ -8,6 +8,17 @@
 ## X-Wago-ID: aND9m26o
 ## SavedVariables: EasyWarCratesDB
 
+# Not ours. Vendored rather than fetched at build time, and why each one is
+# needed is in Libs/README.md. Load order is a dependency chain: LibDBIcon
+# needs LibDataBroker, both need CallbackHandler, and all three find each other
+# through LibStub. These are the only files here that do not load under a plain
+# Lua interpreter -- LibDBIcon builds a frame at load -- so tests/run.py works
+# from its own list of our files and never reads this section.
+Libs/LibStub/LibStub.lua
+Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua
+Libs/LibDataBroker-1.1/LibDataBroker-1.1.lua
+Libs/LibDBIcon-1.0/LibDBIcon-1.0.lua
+
 # Data and logic. Everything down to Track/Timers.lua loads under a plain Lua
 # interpreter as well: the WoW calls these make are injected or sit inside
 # function bodies, never at load. tests/run.py loads this same set, in order.

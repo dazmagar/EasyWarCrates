@@ -40,3 +40,4 @@ ignore:
     - .gitignore
     - .pkgmeta
     - README.md
+    - Libs/README.md

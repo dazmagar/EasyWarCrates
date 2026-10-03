@@ -131,6 +131,10 @@ local function applyDefaults(db)
     db.release = db.release or {}
     db.unknownZones = db.unknownZones or {}
     db.unknownSpeakers = db.unknownSpeakers or {}
+    -- LibDBIcon's own table: it keeps where the button sits and whether it is
+    -- locked. Separate from db.minimap, which is the setting the player sees,
+    -- so the library owns its state and the panel owns its own.
+    db.minimapIcon = db.minimapIcon or {}
     db.strangers = db.strangers or {}
     db.log     = db.log or {}
     -- Deliberately not on db. db IS the saved table, so a store hung off
