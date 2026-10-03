@@ -328,7 +328,34 @@ HANDLERS.airtime = function(rest)
     if not any then
         ns.Print("|cff777777measured when a crate is watched from parachute to ground|r")
     end
-    ns.Print("|cff777777the other leg -- transport to drop point -- is computed from its speed, not learned|r")
+    -- That line used to say the other leg was computed from the transport's
+    -- speed and not learned, which stopped being true the moment Airtime.Flight
+    -- was written: db.flight held 145 readings while this printed the opposite,
+    -- and UI/Model reads the measured figure for the second column.
+    local legZones = {}
+    for zoneID in pairs(ns.ZONES) do legZones[#legZones + 1] = zoneID end
+    table.sort(legZones, function(a, b) return ns.GetZoneAbbr(a) < ns.GetZoneAbbr(b) end)
+
+    local legs = {}
+    for _, zoneID in ipairs(legZones) do
+        local flight, n, lo, hi, _, part, source = ns.Airtime.Flight(ns.db.flight, zoneID)
+        if n and n > 0 then
+            legs[#legs + 1] = ("  %-3s %3ds  |cff777777%s%d reading%s, range %d-%d%s|r"):format(
+                ns.GetZoneAbbr(zoneID), math.floor(flight + 0.5),
+                source == "pooled" and "its readings disagree, so this is every zone's " or "from ",
+                n, n == 1 and "" or "s", math.floor(lo + 0.5), math.floor(hi + 0.5),
+                (part or 0) > 0 and (", %d caught mid-air and left out"):format(part) or "")
+        end
+    end
+    if #legs > 0 then
+        ns.Print("|cff777777the other leg -- spawn to parachute -- timed per zone:|r")
+        for _, line in ipairs(legs) do ns.Print(line) end
+        ns.Print("|cff777777only an announcer really marks the spawn; a transport caught in"
+            .. " the air is a lower bound and is left out|r")
+    else
+        ns.Print("|cff777777the other leg -- spawn to parachute -- needs an announcer heard"
+            .. " before the transport appears|r")
+    end
 end
 
 HANDLERS.timers = function()
