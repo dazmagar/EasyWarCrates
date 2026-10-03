@@ -124,6 +124,26 @@ local function zoneNames()
     return zoneByName
 end
 
+-- Names filed as unresolvable that this client can read now.
+--
+-- The store is written when a name fails to resolve and nothing ever took one
+-- back out, so every name since taught to Data/Zones.lua went on being listed
+-- under "their reports are being dropped" -- which stopped being true the
+-- moment it was taught. Six of ten were in that state on 2 Oct.
+--
+-- Returns how many it dropped.
+function Comm.ForgetResolved()
+    local seen = ns.db and ns.db.unknownZones
+    if not seen then return 0 end
+    local names, dropped = zoneNames(), 0
+    for name in pairs(seen) do
+        if names[ns.NameKey(name)] then
+            seen[name], dropped = nil, dropped + 1
+        end
+    end
+    return dropped
+end
+
 local function take(report, channel)
     report.leader = report.leader or leads(report.from) or nil
     local verdict = ns.Remote.Note(ns.remote, report, GetServerTime())

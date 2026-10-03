@@ -363,12 +363,20 @@ local STRANGER_IDS, STRANGER_SEEN = 60, 16
 -- can still see who spoke.
 local UNKNOWN_SPEAKERS = 40
 
--- Both were meant as a ceiling against a surprise and both reached it and sat
--- there: 30 of 30 ids and 12 of 12 names on 2 Oct, every later find refused in
--- silence. Raised against what they cost in the saved variables, 994 bytes per
--- id and 173 per name, so this headroom is about 30KB and 5KB. /ewc scan seen
--- and /ewc yells now say when a store is at its cap -- the silence was the
--- bug, not the number.
+-- A ceiling here was the wrong idea twice over. 30 of 30 ids on 2 Oct, raised
+-- to 60, and full again the same evening -- because what fills it is not a
+-- surprise, it is Midnight. Of those 60: 15 rares, 13 treasures, 6 ancient
+-- mana, 6 quartermasters, housing vendors, lore objects, warfront icons. The
+-- six zones hold more distinct vignettes than any cap worth setting, so the
+-- store is a budget whatever it was meant to be, and refusing the newest find
+-- spends it on whatever happened to be seen first.
+--
+-- So the budget stays and the cheapest record pays for a newcomer. What this
+-- store exists to catch -- a renumbered crate id, an object on a cycle -- is
+-- seen again and again, so a record that has never been seen twice is the one
+-- worth losing. Nothing that has ever repeated is evicted, and when the whole
+-- store has repeated there is nothing cheap left: the newcomer is refused and
+-- /ewc scan seen says so.
 Scanner.STRANGER_IDS = STRANGER_IDS
 Scanner.UNKNOWN_SPEAKERS = UNKNOWN_SPEAKERS
 
@@ -394,6 +402,20 @@ Scanner.STRANGER_SAME = STRANGER_SAME
 -- zero seconds, which is not a measurement, it is the poll rate.
 local strangerSeen = {}
 
+-- Which record a newcomer should displace: the one never seen twice, oldest
+-- first. nil when every record has repeated, which means the store is full of
+-- exactly what it was built to collect and the newcomer has to wait.
+function Scanner.WeakestStranger(held)
+    local worstID, worstAt
+    for id, rec in pairs(held or {}) do
+        if (rec.n or 0) < 2 then
+            local at = rec.last or rec.first or 0
+            if not worstAt or at < worstAt then worstID, worstAt = id, at end
+        end
+    end
+    return worstID
+end
+
 local function noteStranger(info, guid, zoneID, pos, stamp)
     local held = ns.db and ns.db.strangers
     if not held or not zoneID or not info or not info.vignetteID then return end
@@ -410,9 +432,15 @@ local function noteStranger(info, guid, zoneID, pos, stamp)
 
     local rec = held[info.vignetteID]
     if not rec then
-        local kinds = 0
-        for _ in pairs(held) do kinds = kinds + 1 end
-        if kinds >= STRANGER_IDS then return end
+        if countKeys(held) >= STRANGER_IDS then
+            local spend = Scanner.WeakestStranger(held)
+            if not spend then
+                Scanner.strangersRefused = (Scanner.strangersRefused or 0) + 1
+                return
+            end
+            held[spend] = nil
+            Scanner.strangersEvicted = (Scanner.strangersEvicted or 0) + 1
+        end
         rec = { n = 0, first = stamp, zones = {} }
         held[info.vignetteID] = rec
     end

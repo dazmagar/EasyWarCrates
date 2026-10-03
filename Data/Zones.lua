@@ -103,6 +103,7 @@ local FOREIGN = {
     ["Bois des Chants éternels"] = 2395,  -- frFR Eversong, shards 9681 and 5
     ["Leerensturm"]              = 2405,  -- deDE Voidstorm, shard 63
     ["Tempête du Vide"]          = 2405,  -- frFR Voidstorm, shard 63
+    ["Tormenta del Vacío"]       = 2405,  -- esES Voidstorm, shard 63
     ["Île Annelée"]              = 2512,  -- frFR Coiled Isle, shard 9278
     ["Schlächteranhöhe"]         = 2444,  -- deDE Slayer's Rise, shard 45
     ["Colline Meurtrière"]       = 2444,  -- frFR Slayer's Rise, shard 39

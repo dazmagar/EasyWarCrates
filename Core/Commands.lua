@@ -114,8 +114,12 @@ local function strangerHistory()
     ns.Print(("|cff777777seen before and not tracked -- %d id%s:|r"):format(
         #ids, #ids == 1 and "" or "s"))
     if #ids >= ns.Scanner.STRANGER_IDS then
-        ns.Print(("|cffff8800that is the cap (%d) -- any new id is being dropped."
-            .. " /ewc scan reset empties it.|r"):format(ns.Scanner.STRANGER_IDS))
+        local evicted = ns.Scanner.strangersEvicted or 0
+        local refused = ns.Scanner.strangersRefused or 0
+        ns.Print(("|cffff8800that is the cap (%d). A new id displaces the oldest"
+            .. " that was never seen twice; this session has dropped %d that way"
+            .. " and refused %d with nothing cheap left. /ewc scan reset empties"
+            .. " it.|r"):format(ns.Scanner.STRANGER_IDS, evicted, refused))
     end
     for _, id in ipairs(ids) do
         local rec = ns.db.strangers[id]
@@ -368,6 +372,14 @@ end
 HANDLERS.comm = function()
     ns.Print(("you are %s; sharing is %s"):format(
         ns.Comm.Role(), ns.db.share and "|cff33ff99on|r" or "|cffff8800off|r"))
+
+    -- Anything since taught to this client is not unresolved any more, and
+    -- saying it is sends the reader chasing a gap that has been closed.
+    local learned = ns.Comm.ForgetResolved()
+    if learned > 0 then
+        ns.Print(("|cff777777%d name%s dropped from that list -- resolvable now.|r"):format(
+            learned, learned == 1 and " was" or "s were"))
+    end
 
     local unknown = {}
     for name, held in pairs(ns.db.unknownZones or {}) do
