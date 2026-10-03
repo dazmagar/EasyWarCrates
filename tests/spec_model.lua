@@ -779,3 +779,58 @@ t.test("the countdown survives being encoded and read back", function()
     local old = ns.Remote.Encode({ stage = "flying", zoneID = VS, shardID = 63, at = T0 })
     t.eq(ns.Remote.Decode("EWC1", old, "Farkrim").toGround, nil)
 end)
+
+-- Dmitrii in Zul'Aman with a crate called, released and landed there; his
+-- friend in Eversong whose window never mentioned Zul'Aman at all.
+--
+-- The report was received and held the whole time. Nothing asked for it: a row
+-- was built for a zone with a timer, a zone on the route, a zone this client
+-- could see, or a zone somebody had anchored -- and a transport somebody else
+-- is watching is none of those. Which is the one case sharing exists for.
+t.test("a zone known only from somebody else's report still gets a row", function()
+    local flight = {}
+    for _, secs in ipairs({ 70, 72, 74 }) do ns.Airtime.NoteFlight(flight, ZA, secs) end
+    ns.db = { flight = flight, descent = {}, linger = {}, gaps = {} }
+    ns.remote = ns.Remote.New()
+    ns.Remote.Note(ns.remote, { zoneID = ZA, shardID = 69845, stage = "flying",
+                                at = T0, toGround = 108, x = 0.375, y = 0.341,
+                                from = "Dazm" }, T0)
+
+    -- No timers, no route, nothing visible from here.
+    local rows = Model.BuildRows(Timers.New(), {}, T0 + 5)
+    local found
+    for _, r in ipairs(rows) do if r.zoneID == ZA then found = r end end
+    t.ok(found, "the one zone anybody said anything about is missing from the window")
+    t.eq(found.live.phase, "inbound")
+    t.ok(found.live.toGround and found.live.toGround > 0, "and it counts down")
+    ns.db, ns.remote = nil, nil
+end)
+
+-- A crate already on the ground somewhere else is the most actionable thing
+-- there is, and it was invisible for the same reason.
+t.test("a crate on the ground in a zone nobody here is in gets a row", function()
+    ns.db = { flight = {}, descent = {}, linger = {}, gaps = {} }
+    ns.remote = ns.Remote.New()
+    ns.Remote.Note(ns.remote, { zoneID = SR, shardID = 12561, stage = "ground",
+                                at = T0, from = "Farkrim" }, T0)
+    local rows = Model.BuildRows(Timers.New(), {}, T0 + 5)
+    local found
+    for _, r in ipairs(rows) do if r.zoneID == SR then found = r end end
+    t.ok(found, "a crate lying there and nobody told")
+    t.eq(found.live.phase, "ground")
+    ns.db, ns.remote = nil, nil
+end)
+
+-- Somebody saying where they stand is not news about a crate, and a row per
+-- group member standing somewhere is the clutter this addon exists against.
+t.test("a zone somebody is merely standing in does not get a row", function()
+    ns.db = { flight = {}, descent = {}, linger = {}, gaps = {} }
+    ns.remote = ns.Remote.New()
+    ns.Remote.Note(ns.remote, { zoneID = HA, shardID = 51, stage = "here",
+                                at = T0, from = "Farkrim" }, T0)
+    local rows = Model.BuildRows(Timers.New(), {}, T0 + 5)
+    for _, r in ipairs(rows) do
+        t.eq(r.zoneID == HA, false, "standing somewhere is not a crate")
+    end
+    ns.db, ns.remote = nil, nil
+end)

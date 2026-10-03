@@ -285,6 +285,20 @@ function Model.BuildRows(db, route, now)
         end
     end
 
+    -- And a zone somebody says has a crate in the air or on the ground in it
+    -- right now. Without this the report was received, held and never drawn
+    -- unless the zone happened to be on the route or already timed here --
+    -- which is exactly the case sharing exists for, somebody standing
+    -- somewhere you are not.
+    if ns.Remote and ns.Remote.ReportedZones then
+        for zoneID in pairs(ns.Remote.ReportedZones(ns.remote, now)) do
+            if not seen[zoneID] then
+                local here = shardHere(zoneID, now)
+                add(zoneID, nil, here, nil, here ~= nil)
+            end
+        end
+    end
+
     -- Anything live floats to the top, most urgent first: a crate on the
     -- ground can be taken now, one under a parachute shortly, a transport
     -- eventually. Everything else keeps the order it was built in.

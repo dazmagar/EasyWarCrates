@@ -175,6 +175,31 @@ end
 -- timed them. A zone with no timer of its own gets no row without this, which
 -- is exactly the case being fixed: the raid farms Zul'Aman all evening and the
 -- row is blank because nobody here flew there.
+-- Zones where somebody says something is happening right now.
+--
+-- AnchoredZones below answers a different question -- whose cycle do we know
+-- the phase of -- and for a long time it was the only one asked. So a zone
+-- nobody here had a timer for, that was not on the route and that nobody here
+-- could see, got no row at all however good the report was: Dmitrii's friend
+-- sat in Eversong while a transport was called, released and landed in
+-- Zul'Aman, and his window never mentioned Zul'Aman. The report was received
+-- and held the whole time; nothing ever asked for it.
+--
+-- Only the stages that mean something is in the air or on the ground. "here"
+-- is somebody telling us where they stand, which is not news about a crate.
+function Remote.ReportedZones(store, now)
+    local out = {}
+    for zoneID, shards in pairs(store or {}) do
+        for _, entry in pairs(shards) do
+            if RANK[entry.stage] and alive(entry, now) then
+                out[zoneID] = true
+                break
+            end
+        end
+    end
+    return out
+end
+
 function Remote.AnchoredZones(store, now)
     local out = {}
     for zoneID, shards in pairs(store or {}) do
