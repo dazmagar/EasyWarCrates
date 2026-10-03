@@ -95,6 +95,13 @@ local ALIAS = {
 -- already standing in the parent of, where the same error between Eversong and
 -- Harandar would send them across a continent.
 --
+-- The shard against each name below is a citation, not a key. It records the
+-- one observation that established that binding -- the name arrived carrying
+-- it while this client had that same shard confirmed for one zone and no other
+-- -- and it is not expected to mean anything afterwards. Shards are handed out
+-- per session; 1297 will be some other copy of some other zone next week. The
+-- name is the durable half.
+--
 -- Anything not listed is still collected rather than discarded: /ewc comm
 -- prints unresolved names with the shards they arrived with, which is how
 -- every one of these got here.
@@ -105,6 +112,7 @@ local FOREIGN = {
     ["Tempête du Vide"]          = 2405,  -- frFR Voidstorm, shard 63
     ["Tormenta del Vacío"]       = 2405,  -- esES Voidstorm, shard 63
     ["Île Annelée"]              = 2512,  -- frFR Coiled Isle, shard 9278
+    ["Gewundene Insel"]          = 2512,  -- deDE Coiled Isle, shard 1297
     ["Schlächteranhöhe"]         = 2444,  -- deDE Slayer's Rise, shard 45
     ["Colline Meurtrière"]       = 2444,  -- frFR Slayer's Rise, shard 39
     ["Зубец убийцы"]             = 2444,  -- ruRU Slayer's Rise, no shard

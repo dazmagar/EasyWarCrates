@@ -149,3 +149,26 @@ t.test("with no database at all the shipped figure is used", function()
     ns.db = nil
     t.eq(ns.GetZoneInterval(2413), 1100)
 end)
+
+-- Names other clients broadcast, each resolved from the wire rather than
+-- translated: the name arrived carrying a shard this client had independently
+-- confirmed for one zone. An invariant rather than a list, so a typo in a new
+-- entry is caught on the day it is added.
+t.test("every foreign zone name points at a zone this addon tracks", function()
+    local n = 0
+    for name, zoneID in pairs(ns.ZONE_NAMES_FOREIGN) do
+        n = n + 1
+        t.ok(ns.ZONES[zoneID], ("%s maps to %s, which is not a crate zone"):format(
+            name, tostring(zoneID)))
+        t.eq(ns.NameKey(name), name,
+            ("%s is stored in a spelling NameKey would fold, so it can never match"):format(name))
+    end
+    t.ok(n >= 10, "ten names had been written down by 3 Oct")
+end)
+
+-- Added 3 Oct from a 38-man raid: Zentus-Eredar broadcast it twice carrying
+-- shard 1297, and Momozono's readable report named that same shard as The
+-- Coiled Isle seconds later in the same log.
+t.test("the German Coiled Isle resolves", function()
+    t.eq(ns.ZONE_NAMES_FOREIGN["Gewundene Insel"], 2512)
+end)
