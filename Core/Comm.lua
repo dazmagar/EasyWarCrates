@@ -307,6 +307,31 @@ end
 
 -- Tell the group what this client just saw. Never a prediction on its own: a
 -- guess travelling as news is how one wrong call becomes everyone's.
+-- The one gate everything this client says about a crate passes through, and
+-- the rule it exists to keep: only what this client has just seen with its own
+-- eyes goes out.
+--
+-- Dmitrii's, 3 Oct: the addon is a source of truth, so it speaks in both
+-- directions -- but only when the player running it can actually see the
+-- transport or the crate under its parachute.
+--
+-- That holds by construction rather than by care, and it is worth knowing
+-- where, because the next person to add a caller will not know:
+--
+--   * every caller sits on a fresh vignette sighting. Scanner.Evaluate runs
+--     immediately after track:Add, so a prediction is only ever made from a
+--     transport seen in this sweep, and OnCrateSighted fires on the crate's
+--     own vignette.
+--   * nothing on the receiving side calls this. A report heard from somebody
+--     else is never passed on, so a mistake cannot be laundered into
+--     corroboration by travelling through a third client.
+--   * a prediction goes out only when it is firm. The zone and the shard are
+--     observed; the landing spot is this client's arithmetic, and arithmetic
+--     that has not resolved is not knowledge worth putting in a stranger's
+--     window.
+--
+-- Add a caller that is not a fresh sighting and the addon stops being worth
+-- believing, which is the only thing it has.
 function Comm.Report(zoneID, shardID, stage, pos)
     if not ns.db or not ns.db.enabled or not ns.db.share then return end
     if not ns.Remote.RANK[stage] then return end
