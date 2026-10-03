@@ -673,23 +673,57 @@ HANDLERS.phase = function(rest)
             ns.GetZoneName(zoneID), math.floor(interval + 0.5), drift,
             drift >= ns.Phase.UNKNOWN_DRIFT and " -- never measured here" or ""))
 
-        local shards = {}
-        for shardID in pairs(ns.db.phase[zoneID]) do shards[#shards + 1] = shardID end
-        table.sort(shards, function(a, b) return tostring(a) < tostring(b) end)
-
-        for _, shardID in ipairs(shards) do
-            local held = ns.db.phase[zoneID][shardID]
+        -- Split, because one of these lists is worth reading and the other is
+        -- worth counting. Zul'Aman held eight records of which one could
+        -- answer, and the seven that could not printed a cycle count each --
+        -- "27 cycles" read against the zone like the addon had lost it.
+        --
+        -- Aged out is the only reason that gets collapsed. Any other refusal
+        -- is a fault rather than time passing, so it keeps its own line.
+        local live, spent, oldest = {}, 0, 0
+        for shardID, held in pairs(ns.db.phase[zoneID]) do
             local ts, why, cycles, err, source = ns.Phase.Recall(
                 ns.db.phase, zoneID, shardID, interval, now, drift)
             local age = now - held.ts
-            local when = age >= 3600
-                and ("%dh%02dm"):format(math.floor(age / 3600), math.floor((age % 3600) / 60))
-                or ("%dm"):format(math.floor(age / 60))
+            if ts or why ~= "drifted too far" then
+                live[#live + 1] = { shardID = shardID, age = age, cycles = cycles,
+                                    err = err, source = source,
+                                    why = (not ts) and why or nil }
+            else
+                spent = spent + 1
+                if age > oldest then oldest = age end
+            end
+        end
+
+        -- Freshest first: the copy of the zone the player is standing in is
+        -- what they opened this to read.
+        table.sort(live, function(a, b) return a.age < b.age end)
+        for _, r in ipairs(live) do
+            local when = r.age >= 3600
+                and ("%dh%02dm"):format(math.floor(r.age / 3600), math.floor((r.age % 3600) / 60))
+                or ("%dm"):format(math.floor(r.age / 60))
             ns.Print(("   shard %-7s %8s ago, %d cycle%s   %s"):format(
-                tostring(shardID), when, cycles or 0, (cycles == 1) and "" or "s",
-                ts and ("|cff33ff99+/-%ds, from %s|r"):format(
-                        math.floor((err or 0) + 0.5), source or "unknown")
-                   or ("|cffff8800%s (+/-%ds)|r"):format(why, math.floor((err or 0) + 0.5))))
+                tostring(r.shardID), when, r.cycles or 0, (r.cycles == 1) and "" or "s",
+                r.why and ("|cffff8800%s (+/-%ds)|r"):format(
+                        r.why, math.floor((r.err or 0) + 0.5))
+                   or ("|cff33ff99+/-%ds, from %s|r"):format(
+                        math.floor((r.err or 0) + 0.5), r.source or "unknown")))
+        end
+
+        -- Kept rather than deleted, and the line says why: Recall gives up
+        -- when the drift this client currently believes in outgrows the
+        -- tolerance, and that belief improves as the gaps get measured. A
+        -- record refused today is not one that was never any use, and the rest
+        -- of this addon flags a reading it cannot use instead of discarding it.
+        if spent > 0 then
+            ns.Print(("   |cff777777%d other shard%s remembered, drifted too far to use"
+                .. " -- oldest %dh. Kept until %d days old, in case the interval here"
+                .. " gets measured better.|r"):format(
+                spent, spent == 1 and "" or "s", math.floor(oldest / 3600),
+                math.floor(ns.Phase.KEEP / 86400)))
+        end
+        if #live == 0 and spent == 0 then
+            ns.Print("   |cff777777nothing remembered here yet.|r")
         end
     end
 end
