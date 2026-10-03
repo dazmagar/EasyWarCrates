@@ -29,6 +29,13 @@ local function stampClock() return GetServerTime() end
 -- honest key. The current GUID is carried on the track and replaced as it
 -- moves.
 local tracks = {}
+
+-- The call for a zone, kept apart from the track that produced it. A track is
+-- dropped after a minute out of range and rebuilt on the next sighting with no
+-- commitment, which cost the row its countdown every time the player flew out
+-- of range. The crate has not changed its mind in the meantime.
+local calledFor = {}
+local CALL_KEEP = 400
 -- When each zone last had a transport announced, keyed by zone rather than by
 -- track. See the cooldown's use below for why that distinction matters.
 local spotted = {}
@@ -613,6 +620,9 @@ end
 -- just been answered by the game.
 function Scanner.EndTracks(zoneID)
     tracks[zoneID] = nil
+    -- The crate is down, so the call it was about is answered. Keeping it
+    -- would hand the next transport somebody else's conclusion.
+    calledFor[zoneID] = nil
 end
 
 -- Re-reads the position of every transport being tracked. Also the place a
@@ -926,6 +936,12 @@ function Scanner.OnVignettesUpdated()
                     local tr = tracks[zoneID]
                     if not tr then
                         tr = { track = ns.Heading.NewTrack(zoneID), zoneID = zoneID }
+                        -- Carried over from the track this one replaces, while
+                        -- it can still be about the same transport.
+                        local called = calledFor[zoneID]
+                        if called and (stampClock() - called.at) <= CALL_KEEP then
+                            tr.committed = { x = called.x, y = called.y }
+                        end
                         tracks[zoneID] = tr
                         -- Announced per zone, not per track. A transport's
                         -- vignette churns -- its GUID comes and goes, and each
@@ -1165,6 +1181,7 @@ function Scanner.Evaluate(zoneID, tr)
             local r = cx and ns.Predict.Hovering(ns.GetDropPoints(zoneID), cx, cy)
             if r and r.ok then
                 tr.committed = { x = r.spot.x, y = r.spot.y }
+                calledFor[zoneID] = { x = r.spot.x, y = r.spot.y, at = stampClock() }
                 ns.OnHovering(zoneID, r.spot, r.distance)
             end
         end
@@ -1205,7 +1222,10 @@ function Scanner.Evaluate(zoneID, tr)
 
     local spot = result.aim.spot
     local moved = not (tr.aim and tr.aim.x == spot.x and tr.aim.y == spot.y)
-    if result.ok then tr.committed = { x = spot.x, y = spot.y } end
+    if result.ok then
+        tr.committed = { x = spot.x, y = spot.y }
+        calledFor[zoneID] = { x = spot.x, y = spot.y, at = stampClock() }
+    end
     if moved or result.ok then
         tr.aim = { x = spot.x, y = spot.y }
         ns.OnPrediction(zoneID, result, fit)

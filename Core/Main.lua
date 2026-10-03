@@ -106,9 +106,14 @@ function ns.Say(...)
 end
 
 function ns.Debug(...)
-    if not (ns.db and ns.db.verbose) then return end
     local line = string.join(" ", tostringall(...))
+    -- Remembered whatever the setting says. Printing is a preference; the log
+    -- is how a thing that happened an hour ago gets explained, and it held
+    -- nothing at all unless somebody had turned verbose on before the fact.
+    -- Dmitrii reloaded after a failed sharing test and the record of what his
+    -- client had sent did not exist.
     remember(line)
+    if not (ns.db and ns.db.verbose) then return end
     print("|cff777777[EWC]|r " .. line)
 end
 
