@@ -718,3 +718,64 @@ t.test("a countdown is enough to give the chest its own row", function()
         t.eq(select(2, Model.Announcement(chest, T0)), "spectral")
     end)
 end)
+
+-- Dmitrii in Slayer's Rise, his friend watching a transport in Voidstorm, and
+-- both of them looking at a row that said "inbound" and nothing else while the
+-- friend had a countdown in front of him.
+--
+-- Only the sender can say how far through its flight a transport is -- that
+-- depends on when it spawned, which the receiver has no way to know -- so the
+-- figure travels with the report and this ages it.
+t.test("a shared transport carries its own countdown", function()
+    local flight = {}
+    for _, secs in ipairs({ 70, 72, 74 }) do ns.Airtime.NoteFlight(flight, VS, secs) end
+    ns.db = { flight = flight, descent = {}, linger = {} }
+    ns.remote = ns.Remote.New()
+    ns.Remote.Note(ns.remote, { zoneID = VS, shardID = 63, stage = "flying",
+                                at = T0, toGround = 160, x = 0.38, y = 0.57,
+                                from = "Farkrim" }, T0)
+
+    local live = Model.LiveFor(VS, T0)
+    t.eq(live.phase, "inbound")
+    t.eq(live.toGround, 160, "what the sender reckoned when it sent")
+    t.eq(live.x, 0.38, "and the spot, so clicking the row pins it")
+
+    t.eq(Model.LiveFor(VS, T0 + 40).toGround, 120, "aged by the time since")
+
+    -- Past the landing it stops at zero rather than going negative. Checked
+    -- with a figure small enough to run out while the report is still true:
+    -- a flying report is dropped entirely once it has outlived one measured
+    -- flight, which here is about seventy seconds.
+    ns.Remote.Note(ns.remote, { zoneID = VS, shardID = 64, stage = "flying",
+                                at = T0 + 100, toGround = 30, from = "Farkrim" }, T0 + 100)
+    t.eq(Model.LiveFor(VS, T0 + 150).toGround, 0, "never counts past the landing")
+    ns.db, ns.remote = nil, nil
+end)
+
+-- Anything sent before the field existed, and any sighting whose sender could
+-- not reckon one. The row still says something is on its way.
+t.test("a transport report with no countdown still draws its row", function()
+    local flight = {}
+    for _, secs in ipairs({ 70, 72, 74 }) do ns.Airtime.NoteFlight(flight, VS, secs) end
+    ns.db = { flight = flight, descent = {}, linger = {} }
+    ns.remote = ns.Remote.New()
+    ns.Remote.Note(ns.remote, { zoneID = VS, shardID = 63, stage = "flying",
+                                at = T0, from = "Farkrim" }, T0)
+    local live = Model.LiveFor(VS, T0 + 10)
+    t.eq(live.phase, "inbound")
+    t.eq(live.toGround, nil)
+    ns.db, ns.remote = nil, nil
+end)
+
+-- The figure has to survive the wire, which is where it would be lost.
+t.test("the countdown survives being encoded and read back", function()
+    local wire = ns.Remote.Encode({ stage = "flying", zoneID = VS, shardID = 63,
+                                    at = T0, x = 0.38, y = 0.57, toGround = 162.4 })
+    local r = ns.Remote.Decode("EWC1", wire, "Farkrim")
+    t.eq(r.toGround, 162, "rounded, because a second either way is nothing")
+    t.eq(r.x, 0.38)
+
+    -- And a message from before the field existed reads back without one.
+    local old = ns.Remote.Encode({ stage = "flying", zoneID = VS, shardID = 63, at = T0 })
+    t.eq(ns.Remote.Decode("EWC1", old, "Farkrim").toGround, nil)
+end)

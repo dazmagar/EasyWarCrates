@@ -97,6 +97,10 @@ function Remote.Note(store, report, now)
         leader = report.leader or nil,
         x     = tonumber(report.x),
         y     = tonumber(report.y),
+        -- How long the sender reckoned was left when it sent. Carried because
+        -- only they can know it, and the row has nothing to count down from
+        -- without it.
+        toGround = tonumber(report.toGround),
         -- Carried across a replacement: the raid acting on the first report is
         -- what promotion answers, and the crate progressing from parachute to
         -- ground must not hand it a second bite.
@@ -275,6 +279,17 @@ function Remote.Encode(report)
         WIRE, report.stage, report.zoneID, report.shardID, report.at,
         report.x and ("%.4f"):format(report.x) or "",
         report.y and ("%.4f"):format(report.y) or "",
+        -- Seconds until the crate is on the ground, as the sender reckoned it
+        -- when it sent. An eighth field, which an older client reads past and
+        -- ignores, so this costs nobody anything.
+        --
+        -- Needed because only the sender can work it out. A transport report
+        -- says a plane is in the air; how far through its flight it is depends
+        -- on when it spawned, and the receiver has no way to know that. Until
+        -- this went on the wire every shared transport drew a row saying
+        -- "inbound" and nothing else, on both ends, while the person watching
+        -- it had a countdown in front of them.
+        report.toGround and ("%d"):format(math.floor(report.toGround + 0.5)) or "",
     }, "~")
 end
 
@@ -297,6 +312,10 @@ decoders.EWC1 = function(f, sender)
     return {
         stage = f[2], zoneID = zoneOf(f[3]), shardID = shardOf(f[4]),
         at = tonumber(f[5]), x = tonumber(f[6]), y = tonumber(f[7]),
+        -- Absent from anything sent before this field existed, and from a
+        -- sighting whose sender could not reckon one. nil then, and the row
+        -- falls back to saying only that something is on its way.
+        toGround = tonumber(f[8]),
         from = sender, via = "EWC",
     }
 end

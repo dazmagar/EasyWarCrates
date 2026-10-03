@@ -67,9 +67,13 @@ function Model.LiveFor(zoneID, now)
         local phase = report.stage == "flying" and "inbound" or report.stage
         local eta = report.stage == "falling"
             and ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, nil, nil, report.at, now)
+        -- A transport somebody else is watching. Only they can say how far
+        -- through its flight it is, so they send the figure and this ages it
+        -- rather than recomputing something it has no basis for.
+        local told = report.toGround and math.max(0, report.toGround - (now - report.at))
         return {
             phase = phase, rank = ns.Remote.RANK[report.stage] or 99,
-            since = report.at, toGround = eta and eta.toGround or nil,
+            since = report.at, toGround = (eta and eta.toGround) or told or nil,
             x = report.x, y = report.y,
             from = report.from, via = report.via,
         }

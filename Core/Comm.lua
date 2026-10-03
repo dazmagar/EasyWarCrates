@@ -332,7 +332,7 @@ end
 --
 -- Add a caller that is not a fresh sighting and the addon stops being worth
 -- believing, which is the only thing it has.
-function Comm.Report(zoneID, shardID, stage, pos)
+function Comm.Report(zoneID, shardID, stage, pos, toGround)
     if not ns.db or not ns.db.enabled or not ns.db.share then return end
     if not ns.Remote.RANK[stage] then return end
     if not IsInGroup() then return end
@@ -368,6 +368,7 @@ function Comm.Report(zoneID, shardID, stage, pos)
         stage = stage, zoneID = zoneID, shardID = shardID,
         at = began or GetServerTime(),
         x = pos and pos.x or nil, y = pos and pos.y or nil,
+        toGround = toGround,
     })
     local channel = IsInRaid() and "RAID" or "PARTY"
     local ok = pcall(C_ChatInfo.SendAddonMessage, OURS, payload, channel)

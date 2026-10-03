@@ -443,7 +443,7 @@ end
 -- Firm calls only. A 36%-sure guess between two drop points on one line is
 -- worth printing for the person who can watch it resolve, and is not worth
 -- putting in somebody else's window as a fact.
-local function shareSpot(zoneID, spot, shardID)
+local function shareSpot(zoneID, spot, shardID, toGround)
     if not (ns.Comm and ns.Scanner) then return end
     -- Remote.Note refuses a report with no shard, and rightly: a timer for a
     -- copy of the zone nobody can name is a timer for nothing. The transport's
@@ -451,7 +451,7 @@ local function shareSpot(zoneID, spot, shardID)
     -- caller that has it passes it.
     shardID = shardID or (ns.Scanner.CurrentShard and ns.Scanner.CurrentShard(zoneID))
     if not shardID then return end
-    ns.Comm.Report(zoneID, shardID, "flying", spot)
+    ns.Comm.Report(zoneID, shardID, "flying", spot, toGround)
 end
 
 -- A transport, the moment one is seen, before anything has been worked out
@@ -485,7 +485,8 @@ function ns.OnHovering(zoneID, spot, dist)
     else
         pinCrate(zoneID, spot.x, spot.y)
     end
-    shareSpot(zoneID, spot)
+    -- Circling means it drops any moment, so what is left is the fall.
+    shareSpot(zoneID, spot, nil, descent)
 end
 
 -- Called when there is a spot worth flying to, firm or not.
@@ -540,7 +541,7 @@ function ns.OnPrediction(zoneID, result, fit)
             pinCrate(zoneID, s.x, s.y)
         end
     end
-    if firm then shareSpot(zoneID, s) end
+    if firm then shareSpot(zoneID, s, nil, eta and eta.toGround) end
 end
 
 local frame = CreateFrame("Frame")
