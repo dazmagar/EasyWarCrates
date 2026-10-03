@@ -339,7 +339,17 @@ function Comm.Report(zoneID, shardID, stage, pos)
         x = pos and pos.x or nil, y = pos and pos.y or nil,
     })
     local channel = IsInRaid() and "RAID" or "PARTY"
-    pcall(C_ChatInfo.SendAddonMessage, OURS, payload, channel)
+    local ok = pcall(C_ChatInfo.SendAddonMessage, OURS, payload, channel)
+
+    -- Logged, because until now nothing recorded that this client had said
+    -- anything. Testing the sharing between two people meant reading the
+    -- receiver's log and inferring the sender's half, and when nothing
+    -- arrived there was no way to tell "it was never sent" from "it was sent
+    -- and lost". Both halves are in /ewc comm now.
+    log({ via = "EWC", from = "you", channel = channel, sent = true,
+          text = ("%s in %s shard %s"):format(stage,
+              ns.GetZoneAbbr(zoneID), tostring(shardID)),
+          verdict = ok and "sent" or "the game refused it" })
 end
 
 -- Put the call in raid chat, with a pin the raid can click.
