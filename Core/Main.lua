@@ -438,13 +438,31 @@ end
 -- Firm calls only. A 36%-sure guess between two drop points on one line is
 -- worth printing for the person who can watch it resolve, and is not worth
 -- putting in somebody else's window as a fact.
-local function shareSpot(zoneID, spot)
-    if not (ns.Comm and ns.Scanner and spot) then return end
+local function shareSpot(zoneID, spot, shardID)
+    if not (ns.Comm and ns.Scanner) then return end
     -- Remote.Note refuses a report with no shard, and rightly: a timer for a
-    -- copy of the zone nobody can name is a timer for nothing.
-    local shardID = ns.Scanner.CurrentShard and ns.Scanner.CurrentShard(zoneID)
+    -- copy of the zone nobody can name is a timer for nothing. The transport's
+    -- own GUID carries a better one than the nameplates around it do, so a
+    -- caller that has it passes it.
+    shardID = shardID or (ns.Scanner.CurrentShard and ns.Scanner.CurrentShard(zoneID))
     if not shardID then return end
     ns.Comm.Report(zoneID, shardID, "flying", spot)
+end
+
+-- A transport, the moment one is seen, before anything has been worked out
+-- about where it is going.
+--
+-- Dmitrii's, 3 Oct: somebody in another zone should learn that a zone has
+-- something happening in it as it happens, not when the arithmetic resolves.
+-- Committing takes five or six sightings, and until now that whole window was
+-- silence -- the one zone on the route with a crate inbound looked exactly
+-- like the five without one.
+--
+-- No coordinates, because there are none yet, and the row renders as a plain
+-- "inbound" without them. The spot follows on its own message once the call
+-- is firm.
+function ns.OnTransportSpotted(zoneID, shardID)
+    shareSpot(zoneID, nil, shardID)
 end
 
 -- A transport found circling its drop point. There is no release to time --

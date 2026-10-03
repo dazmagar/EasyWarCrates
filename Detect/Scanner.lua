@@ -936,6 +936,11 @@ function Scanner.OnVignettesUpdated()
                             spotted[zoneID] = tNow
                             ns.Say(("|cffffd100transport spotted|r in %s -- tracking"):format(
                                 ns.GetZoneName(zoneID)))
+                            -- Said to the group at the same moment it is said
+                            -- here, and from the transport's own shard.
+                            if ns.OnTransportSpotted then
+                                ns.OnTransportSpotted(zoneID, shard)
+                            end
                         end
                     end
                     tr.guid = guid

@@ -337,7 +337,13 @@ function Comm.Report(zoneID, shardID, stage, pos)
     if not ns.Remote.RANK[stage] then return end
     if not IsInGroup() then return end
 
-    local key = ("%s:%s:%s"):format(zoneID, tostring(shardID), stage)
+    -- Keyed on whether a position is attached as well as on the stage: the
+    -- bare "a transport is here" goes out the moment one is seen, and the
+    -- landing spot follows as soon as the call firms up, usually inside the
+    -- cooldown. One key for both would drop whichever came second, which is
+    -- the half that is worth having.
+    local key = ("%s:%s:%s:%s"):format(zoneID, tostring(shardID), stage,
+        pos and "spot" or "bare")
     local now = GetTime()
     if (now - (lastSent[key] or -math.huge)) < SEND_COOLDOWN then return end
     lastSent[key] = now
