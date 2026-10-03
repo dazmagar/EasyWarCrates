@@ -95,7 +95,15 @@ local function rateOK(sender)
         return true
     end
     r.n = r.n + 1
-    return r.n <= RX_PER_WINDOW
+    if r.n > RX_PER_WINDOW then
+        -- Counted, not logged. Logging each one is the flood this exists to
+        -- stop. But dropping them in silence means a real sighting lost
+        -- inside somebody's burst of token handshakes leaves no trace at all,
+        -- and then /ewc comm has nothing to say about why it is quiet.
+        Comm.rateLimited = (Comm.rateLimited or 0) + 1
+        return false
+    end
+    return true
 end
 
 local function log(entry)

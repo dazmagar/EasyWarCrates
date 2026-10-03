@@ -423,14 +423,31 @@ HANDLERS.comm = function()
             .. " prefixes all addons may hold between them|r"):format(
             table.concat(missing, ", ")))
     end
-    ns.Print(("reports held: %d%s"):format(ns.Remote.Count(ns.remote, GetServerTime()),
+    ns.Print(("reports held: %d%s%s"):format(ns.Remote.Count(ns.remote, GetServerTime()),
         (ns.Comm.handshakes or 0) > 0
             and ("  |cff777777(%d token handshakes ignored -- somebody's RCT is talking)|r")
                 :format(ns.Comm.handshakes)
+            or "",
+        -- Twenty messages per five seconds per sender. Worth saying out loud,
+        -- because a real sighting arriving inside somebody's burst is dropped
+        -- with it and this is the only place that would ever mention it.
+        (ns.Comm.rateLimited or 0) > 0
+            and ("  |cffff8800(%d dropped: one sender over 20 messages in 5s)|r")
+                :format(ns.Comm.rateLimited)
             or ""))
 
     local heard = ns.Comm.heard
     if #heard == 0 then
+        -- Two very different silences, and this used to report both as the
+        -- first. Dmitrii saw "alone you will see nothing" on the same screen
+        -- as 122 counted messages.
+        local counted = (ns.Comm.handshakes or 0) + (ns.Comm.rateLimited or 0)
+        if counted > 0 then
+            return ns.Print(("|cff777777%d message%s arrived and none of them carried a"
+                .. " sighting -- counted above rather than listed here. So the channel"
+                .. " is alive and nobody on it is reporting crates.|r"):format(
+                counted, counted == 1 and "" or "s"))
+        end
         return ns.Print("|cff777777nothing heard yet. Addon traffic only reaches you from"
             .. " your own party, raid or guild, so alone you will see nothing.|r")
     end
