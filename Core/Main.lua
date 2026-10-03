@@ -189,14 +189,20 @@ local function pinCrate(zoneID, x, y, always)
     -- flight while the one waypoint sat in Slayer's Rise.
     local set = C_Map.GetUserWaypoint and C_Map.GetUserWaypoint()
     local at = set and set.position
-    local there = set and set.uiMapID == zoneID and at
+    local sameZone = (set and set.uiMapID == zoneID) or false
+    local there = sameZone and at
         and math.abs(at.x - x) <= PIN_MOVED and math.abs(at.y - y) <= PIN_MOVED
     if there and not always then return end
 
-    -- Saying so is still once per zone. A crate under its parachute drifts,
-    -- so the pin follows it for the whole descent, and a line each time filled
-    -- the chat with forty identical ones in eighty seconds.
-    local said = pinnedAt[zoneID] ~= nil
+    -- Quiet only while the pin is already in this zone and merely following a
+    -- parachute across it: that drift used to fill the chat with forty
+    -- identical lines in eighty seconds.
+    --
+    -- Putting the pin back after another zone took the one waypoint is news,
+    -- and it is the only way to watch that happen -- the repeated drop point
+    -- in Voidstorm went unmarked for a whole flight and the chat said nothing
+    -- either way.
+    local said = pinnedAt[zoneID] ~= nil and sameZone
     pinnedAt[zoneID] = { x = x, y = y }
     return ns.SetCratePin(zoneID, x, y, said)
 end
