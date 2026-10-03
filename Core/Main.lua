@@ -417,6 +417,36 @@ function ns.SetCratePin(zoneID, x, y, quiet)
     return false
 end
 
+-- Tell the group where this transport is going, while it is still in the air.
+--
+-- Until now nothing left this client until the crate was already under its
+-- parachute, so a scout watching a transport cross Eversong knew everything
+-- and said nothing: the rest of the raid first heard about the zone when the
+-- descent began, by which point the prediction -- the whole point of this
+-- addon -- had been spent locally.
+--
+-- What goes out is the predicted LANDING SPOT, not where the transport is. The
+-- receiver can act on a landing spot: it draws a row, counts down to it and
+-- pins it on a click. Where the plane happens to be is of no use to anybody
+-- who cannot see it.
+--
+-- Nothing new on the wire. "flying" already has a lifetime and a rank at both
+-- ends, Remote.For already ranks it below a parachute somebody can see, and
+-- Model.StillTrue already drops it after one measured flight. Only the sending
+-- was missing.
+--
+-- Firm calls only. A 36%-sure guess between two drop points on one line is
+-- worth printing for the person who can watch it resolve, and is not worth
+-- putting in somebody else's window as a fact.
+local function shareSpot(zoneID, spot)
+    if not (ns.Comm and ns.Scanner and spot) then return end
+    -- Remote.Note refuses a report with no shard, and rightly: a timer for a
+    -- copy of the zone nobody can name is a timer for nothing.
+    local shardID = ns.Scanner.CurrentShard and ns.Scanner.CurrentShard(zoneID)
+    if not shardID then return end
+    ns.Comm.Report(zoneID, shardID, "flying", spot)
+end
+
 -- A transport found circling its drop point. There is no release to time --
 -- it is already there -- so this says only where, and how long the crate will
 -- then take to come down.
@@ -432,6 +462,7 @@ function ns.OnHovering(zoneID, spot, dist)
     else
         pinCrate(zoneID, spot.x, spot.y)
     end
+    shareSpot(zoneID, spot)
 end
 
 -- Called when there is a spot worth flying to, firm or not.
@@ -486,6 +517,7 @@ function ns.OnPrediction(zoneID, result, fit)
             pinCrate(zoneID, s.x, s.y)
         end
     end
+    if firm then shareSpot(zoneID, s) end
 end
 
 local frame = CreateFrame("Frame")
