@@ -9,7 +9,12 @@ ns.ADDON = ADDON
 -- loader converts once, and tests/spec_droppoints.lua pins that conversion.
 ns.PCT = 0.01
 
-ns.version = "0.1.0"
+function ns.Version()
+    local ask = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
+    if not ask then return "unknown" end
+    local ok, got = pcall(ask, ADDON, "Version")
+    return (ok and type(got) == "string" and got ~= "" and got) or "unknown"
+end
 
 -- M:SS for a countdown, or "--" when there is nothing to count. Padded to a
 -- fixed width so columns of these line up -- 1:55 and 14:55 otherwise shunt

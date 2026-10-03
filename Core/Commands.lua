@@ -18,7 +18,7 @@ HANDLERS.data = function() ns.ToggleDataPanel() end
 HANDLERS.status = function()
     local rawMap = C_Map.GetBestMapForUnit("player")
     local zoneID = rawMap and ns.Zones.Normalize(rawMap)
-    ns.Print("version " .. ns.version .. ", enabled=" .. tostring(ns.db.enabled)
+    ns.Print("version " .. ns.Version() .. ", enabled=" .. tostring(ns.db.enabled)
         .. ", waypoint=" .. tostring(ns.db.waypoint) .. ", verbose=" .. tostring(ns.db.verbose))
     ns.Print(("map %s -> %s"):format(tostring(rawMap),
         zoneID and (ns.GetZoneName(zoneID) .. " (" .. zoneID .. ")") or "|cffff8800not a tracked crate zone|r"))

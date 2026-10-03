@@ -496,7 +496,7 @@ frame:SetScript("OnEvent", function(_, event, name)
     ns.Phase.Absorb(ns.db.phase, ns.db.crates)
     ns.Phase.Forget(ns.db.phase, now)
     local dropped = ns.Timers.Prune(ns.db.crates, ns.GetZoneInterval, now)
-    ns.Print("v" .. ns.version .. " loaded. |cffffffff/ewc|r for commands."
+    ns.Print("v" .. ns.Version() .. " loaded. |cffffffff/ewc|r for commands."
         .. (dropped > 0 and (" |cff777777(%d stale timer%s cleared)|r"):format(
             dropped, dropped == 1 and "" or "s") or ""))
 end)
