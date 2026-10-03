@@ -1,7 +1,7 @@
 # EasyWarCrates
 
-## [v0.2.4](https://github.com/dazmagar/EasyWarCrates/tree/v0.2.4) (2026-10-03)
-[Full Changelog](https://github.com/dazmagar/EasyWarCrates/commits/v0.2.4) [Previous Releases](https://github.com/dazmagar/EasyWarCrates/releases)
+## [v0.2.0](https://github.com/dazmagar/EasyWarCrates/tree/v0.2.0) (2026-10-03)
+[Full Changelog](https://github.com/dazmagar/EasyWarCrates/commits/v0.2.0) [Previous Releases](https://github.com/dazmagar/EasyWarCrates/releases)
 
 Mostly fixes, and two of them were stopping the addon doing the thing it is
 for. Everything here was found by running it, not by reading it.
