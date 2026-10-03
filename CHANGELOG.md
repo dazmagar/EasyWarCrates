@@ -1,7 +1,7 @@
 # EasyWarCrates
 
-## [v0.2.0](https://github.com/dazmagar/EasyWarCrates/tree/v0.2.0) (2026-10-02)
-[Full Changelog](https://github.com/dazmagar/EasyWarCrates/commits/v0.2.0) [Previous Releases](https://github.com/dazmagar/EasyWarCrates/releases)
+## [v0.2.1](https://github.com/dazmagar/EasyWarCrates/tree/v0.2.1) (2026-10-03)
+[Full Changelog](https://github.com/dazmagar/EasyWarCrates/commits/v0.2.1) [Previous Releases](https://github.com/dazmagar/EasyWarCrates/releases)
 
 Mostly fixes, and two of them were stopping the addon doing the thing it is
 for. Everything here was found by running it, not by reading it.
@@ -31,6 +31,15 @@ for. Everything here was found by running it, not by reading it.
 
 ## Sharing with your group
 
+- **Where the transport is going goes out while it is still in the air.** Until
+  now nothing left your client until the crate was already under its parachute,
+  so somebody watching a transport cross a zone knew where it would land and
+  said nothing -- the rest of the group first heard about the zone when the
+  descent began. The predicted landing spot is shared the moment the call is
+  firm, which is two to three minutes earlier, and it arrives as a row with a
+  countdown that pins the spot when you click it. Only firm calls: a guess
+  between two drop points on one line stays on the screen of whoever can watch
+  it resolve.
 - **A report says when the stage began, not when the message was sent.** Every
   re-send used to restart the receiver's descent countdown, so a parachute read
   as having just opened for the whole of its fall. Both clients need this
