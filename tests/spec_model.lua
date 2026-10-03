@@ -834,3 +834,53 @@ t.test("a zone somebody is merely standing in does not get a row", function()
     end
     ns.db, ns.remote = nil, nil
 end)
+
+-- A transport circling its drop point has no heading left to read, so
+-- Airtime.ETA refuses: it wants a fit and there is none. The column went blank
+-- for the last minute of every flight -- the minute anybody is watching it --
+-- while the chat line was already saying it would drop any moment.
+t.test("a circling transport counts down the fall it is about to make", function()
+    local descent = {}
+    for _, secs in ipairs({ 82, 83, 84 }) do ns.Airtime.NoteDescent(descent, ZA, secs) end
+    ns.db = { descent = descent, flight = {}, linger = {}, gaps = {}, release = {} }
+    local prev = ns.Scanner
+    ns.Scanner = {
+        LiveCrate = function() return nil end,
+        HasTransport = function(z) return z == ZA end,
+        Prediction = function()
+            -- What Scanner.Prediction answers once the plane stops moving: a
+            -- call already made, and no fit to compute a flight time from.
+            return { ok = false, reason = "not-moving", fit = nil,
+                     committed = { x = 0.458, y = 0.378 } }
+        end,
+    }
+    local live = Model.LiveFor(ZA, T0)
+    ns.Scanner = prev
+    t.eq(live.phase, "inbound")
+    t.ok(live.toGround, "the column was blank for the last minute of every flight")
+    t.ok(live.toGround >= 82 and live.toGround <= 84, "and what is left is the fall")
+    t.eq(live.x, 0.458, "the called spot is still what the row points at")
+    ns.db = nil
+end)
+
+-- A call carried into a track that is still gathering says nothing about how
+-- far away the plane is, so it gets no invented number.
+t.test("a call with no fit and no circling still shows no time", function()
+    local descent = {}
+    for _, secs in ipairs({ 82, 83, 84 }) do ns.Airtime.NoteDescent(descent, ZA, secs) end
+    ns.db = { descent = descent, flight = {}, linger = {}, gaps = {}, release = {} }
+    local prev = ns.Scanner
+    ns.Scanner = {
+        LiveCrate = function() return nil end,
+        HasTransport = function(z) return z == ZA end,
+        Prediction = function()
+            return { ok = false, reason = "gathering", fit = nil,
+                     committed = { x = 0.458, y = 0.378 } }
+        end,
+    }
+    local live = Model.LiveFor(ZA, T0)
+    ns.Scanner = prev
+    t.eq(live.phase, "inbound")
+    t.eq(live.toGround, nil, "an unknown distance is not a countdown")
+    ns.db = nil
+end)

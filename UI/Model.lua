@@ -54,7 +54,21 @@ function Model.LiveFor(zoneID, now)
             and ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, r.fit, r.committed, nil, now,
                 ns.db and ns.db.release)
         local aim = r and (r.committed or (r.aim and r.aim.spot))
-        return { phase = "inbound", toGround = eta and eta.toGround or nil, rank = 3,
+
+        -- A transport circling its drop point has no heading left to read, so
+        -- Airtime.ETA refuses -- it needs a fit and there is none. The column
+        -- then went blank for the last minute of every flight, which is the
+        -- minute anybody is actually watching it.
+        --
+        -- What is left at that point is the fall: it drops any moment, and
+        -- OnHovering already says so out loud. Only while it is circling. A
+        -- call carried over into a track that is still gathering samples says
+        -- nothing about how far away the plane is.
+        local left = eta and eta.toGround
+        if not left and r and r.committed and r.reason == "not-moving" then
+            left = ns.Airtime.Descent(ns.db and ns.db.descent, zoneID)
+        end
+        return { phase = "inbound", toGround = left, rank = 3,
                  x = aim and aim.x, y = aim and aim.y }
     end
 
