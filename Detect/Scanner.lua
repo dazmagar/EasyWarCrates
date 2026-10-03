@@ -421,6 +421,13 @@ end
 local function noteStranger(info, guid, zoneID, pos, stamp)
     local held = ns.db and ns.db.strangers
     if not held or not zoneID or not info or not info.vignetteID then return end
+    -- Furniture. Why this is a list of art and not a cap is in
+    -- Data/Vignettes.lua; counted rather than dropped silently, because a
+    -- store that refuses without saying so is how this went unnoticed before.
+    if ns.IsSceneryArt(info.atlasName) then
+        Scanner.sceneryRefused = (Scanner.sceneryRefused or 0) + 1
+        return
+    end
     -- Position to the nearest percent: a vignette wobbles a little between
     -- polls, and two objects a percent apart are the same object.
     local key = ("%d:%s:%s:%s"):format(info.vignetteID, tostring(zoneID),

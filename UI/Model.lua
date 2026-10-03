@@ -143,7 +143,18 @@ end
 --   live        a crate down or falling in that zone now: { phase, toGround }
 --   next        the one row worth acting on
 function Model.BuildRows(db, route, now)
-    if ns.Remote and ns.Remote.Settle then ns.Remote.Settle(ns.remote, now) end
+    if ns.Remote and ns.Remote.Settle then
+        -- Settle first, then expire: a landed crate becomes an anchor and
+        -- lives on, and only what nothing can read any more is dropped.
+        --
+        -- Expire had no caller outside its own spec, so an aged report was
+        -- filtered at every read by alive() and never removed. Nothing was
+        -- wrong with the rows, but the table grew for as long as the group
+        -- lasted -- which is the shape of the complaint this addon exists
+        -- about, kept in check only by Clear when the group ends.
+        ns.Remote.Settle(ns.remote, now)
+        ns.Remote.Expire(ns.remote, now)
+    end
     local rows, seen = {}, {}
 
     local function add(zoneID, entry, shardID, planned, known, shardFrom)

@@ -1,7 +1,7 @@
 local ns, t = ...
 local Remote, Timers = ns.Remote, ns.Timers
 
-local ZA, HA = 2437, 2413
+local ZA, HA, VS = 2437, 2413, 2405
 local T0 = 1000000
 
 local function report(over)
@@ -695,4 +695,70 @@ t.test("an anchor past its life is not offered", function()
                          at = T0, from = "Someone", via = "HGLog" }, T0)
     t.ok(Remote.AnchorFor(store, ZA, 41, T0 + 1100))
     t.eq(Remote.AnchorFor(store, ZA, 41, T0 + 1300), nil)
+end)
+
+-- CrateTrackerZK, two protocols, both pipe-separated. The shapes are read out
+-- of their own source rather than guessed: two players in Dmitrii's group were
+-- broadcasting 85 to 107 bytes an evening that this addon heard and could not
+-- read a word of.
+local CTKZK_GUID = "GameObject-0-3299-2405-63-527903-00004F1A22"
+
+t.test("CrateTrackerZK's phase sync becomes an anchor", function()
+    local r = Remote.Decode("CTKZK_PSYNC",
+        "PHASE_AIRDROP|5|midnight|2405|63|" .. T0 .. "|" .. CTKZK_GUID .. "|npc_shout",
+        "Reudi-Zuljin")
+    t.ok(r, "their shout time is the spawn, the same anchor a yell gives us")
+    t.eq(r.stage, "anchor")
+    t.eq(r.zoneID, VS)
+    t.eq(r.shardID, 63)
+    t.eq(r.at, T0)
+    t.eq(r.via, "CTKZK")
+    t.eq(r.from, "Reudi-Zuljin")
+end)
+
+-- Their older protocol has no phase field, so the shard has to come out of the
+-- object's GUID -- the same position this addon already reads one from.
+t.test("their older sync has no phase field, so the GUID supplies the shard", function()
+    local r = Remote.Decode("CTKZK_SYNC",
+        "AIRDROP|3|2405|" .. T0 .. "|" .. CTKZK_GUID .. "|npc_shout", "Azuilan-Silvermoon")
+    t.ok(r, "an anchor with no phase field is still an anchor")
+    t.eq(r.zoneID, VS)
+    t.eq(r.shardID, 63, "read out of the GUID")
+    t.eq(r.at, T0)
+end)
+
+-- icon_detection stamps when somebody's client first drew an icon, which is
+-- whatever stage the cycle had reached when they arrived. Taking it as a spawn
+-- would move the row by minutes.
+t.test("only their shout time is trusted, never their icon sighting", function()
+    t.eq(Remote.Decode("CTKZK_PSYNC",
+        "PHASE_AIRDROP|5|midnight|2405|63|" .. T0 .. "|" .. CTKZK_GUID .. "|icon_detection",
+        "Reudi-Zuljin"), nil)
+    t.eq(Remote.Decode("CTKZK_SYNC",
+        "AIRDROP|3|2405|" .. T0 .. "|" .. CTKZK_GUID .. "|icon_detection",
+        "Reudi-Zuljin"), nil)
+end)
+
+t.test("their other message types and versions are passed over", function()
+    -- A protocol bump has to stop us reading a shape we no longer know.
+    t.eq(Remote.Decode("CTKZK_PSYNC",
+        "PHASE_AIRDROP|6|midnight|2405|63|" .. T0 .. "|" .. CTKZK_GUID .. "|npc_shout",
+        "Reudi-Zuljin"), nil)
+    t.eq(Remote.Decode("CTKZK_SYNC",
+        "AIRDROP|4|2405|" .. T0 .. "|" .. CTKZK_GUID .. "|npc_shout", "Reudi-Zuljin"), nil)
+    -- Their request and claim traffic says nothing about a crate.
+    t.eq(Remote.Decode("CTKZK_PSYNC", "SYNC_REQUEST|5|abc|" .. T0, "Reudi-Zuljin"), nil)
+    t.eq(Remote.Decode("CTKZK_SYNC",
+        "PHASE_CLAIM|2|midnight|2405|63|" .. T0, "Reudi-Zuljin"), nil)
+end)
+
+-- Decode reads the wire and Note decides what is worth keeping, so a zone
+-- this addon does not track is refused one step later rather than here.
+t.test("a zone this addon does not track is refused by Note", function()
+    local r = Remote.Decode("CTKZK_PSYNC",
+        "PHASE_AIRDROP|5|midnight|84|1|" .. T0 .. "|" .. CTKZK_GUID .. "|npc_shout",
+        "Reudi-Zuljin")
+    t.ok(r, "the payload is readable")
+    t.eq(r.zoneID, 84)
+    t.eq(Remote.Note(Remote.New(), r, T0), "invalid", "Stormwind is not a crate zone")
 end)

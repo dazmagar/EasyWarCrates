@@ -71,6 +71,54 @@ function ns.VignetteStage(vignetteID)
     return STAGE[vignetteID]
 end
 
+-- Vignette art that is never a crate.
+--
+-- db.strangers exists to catch an object this addon does not yet know -- a
+-- renumbered crate id, a chest on a cycle -- and it jammed instead: 30 of 30,
+-- raised to 60, full again the same evening. Reading the 60 said why. They are
+-- the contents of a Midnight zone: rares, vendors, lore objects, warfront
+-- icons, quest objects. Six zones hold more of those than any cap worth
+-- setting, so the store needed to stop collecting them rather than to hold
+-- more.
+--
+-- Named from those samples instead of from a guess about what a crate looks
+-- like, which is the opposite way round from how this was first attempted.
+--
+-- What is deliberately NOT here is the loot art. VignetteLootElite is what the
+-- Spectral Battle Chest wears -- the object this store was built for -- and
+-- VignetteLoot is its ordinary cousin. Refusing those to save eleven slots
+-- would have thrown away the question.
+--
+-- And this only decides what is filed. /ewc scan prints every vignette drawn
+-- in the zone whatever its art, so a crate id renumbered onto unfamiliar art
+-- is still there to be read off the screen.
+local SCENERY = {
+    ["VignetteKill"] = true,         -- a rare, i.e. something you kill
+    ["VignetteKillElite"] = true,
+    ["Quartermaster"] = true,
+    ["Class"] = true,                -- also a renown quartermaster
+    ["AncientMana"] = true,          -- Glowing Moth and friends
+    ["loreobject-32x32"] = true,
+    ["housing-decor-vendor_32"] = true,
+    ["dragon-rostrum"] = true,
+    ["QuestObjective"] = true,
+    ["AllianceSymbol"] = true,       -- a turn-in
+    ["HordeSymbol"] = true,
+    ["poi-prey"] = true,
+    ["Ammunition"] = true,           -- Ethereal Tool Rack, nine at a time
+    ["Vehicle-TempleofKotmogu-PurpleBall"] = true,  -- an area effect
+}
+
+-- Every warfront map icon, of which there are many and all of them are noise
+-- here. Matched on the stem because the full names carry faction, map and size.
+local SCENERY_STEM = "Warfront"
+
+function ns.IsSceneryArt(atlasName)
+    if type(atlasName) ~= "string" or atlasName == "" then return false end
+    if SCENERY[atlasName] then return true end
+    return atlasName:sub(1, #SCENERY_STEM) == SCENERY_STEM
+end
+
 -- Stages that mean the crate is down and its position is the real landing
 -- spot, as opposed to somewhere it was merely passing over.
 ns.LANDED_STAGE = {

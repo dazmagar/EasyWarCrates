@@ -257,9 +257,14 @@ end
 local WIRE = 1
 Remote.WIRE = WIRE
 
-local function fields(text)
+-- Separator per sender, because not everybody chose the same one. Only "~"
+-- and "|" are ever passed, and neither is magic in a Lua pattern.
+local function fields(text, sep)
+    sep = sep or "~"
     local out = {}
-    for field in (tostring(text) .. "~"):gmatch("([^~]*)~") do out[#out + 1] = field end
+    for field in (tostring(text) .. sep):gmatch("([^" .. sep .. "]*)" .. sep) do
+        out[#out + 1] = field
+    end
     return out
 end
 
@@ -313,13 +318,60 @@ decoders.WarCrateTracker = function(f, sender)
     }
 end
 
+-- CrateTrackerZK, in the clear on two prefixes and read out of its own source
+-- rather than guessed from byte counts on the wire:
+--
+--   CTKZK_SYNC   AIRDROP|3|<mapID>|<ts>|<objectGUID>|<timeType>
+--   CTKZK_PSYNC  PHASE_AIRDROP|5|<expansion>|<mapID>|<phaseID>|<ts>|<objectGUID>|<timeType>
+--
+-- Pipe-separated, which is their choice and not a mistake on their part: the
+-- doubling this addon picked a tilde to avoid happens to chat messages, not to
+-- addon messages. Their own parser splits on a plain pipe and their users sync
+-- with each other, which settles it.
+--
+-- Only npc_shout is taken. Their other timeType, icon_detection, stamps the
+-- moment a client first drew an icon -- which is whatever stage the cycle had
+-- reached when somebody arrived, not the spawn. Reading that as an anchor
+-- would move a row by minutes in the direction nobody can predict.
+--
+-- Ranked as an anchor either way: it is their reading of their cycle, not a
+-- crate anybody here has seen, so it draws a countdown and never announces.
+local CTKZK_SHOUT = "npc_shout"
+
+local function ctkzkAnchor(mapID, phaseID, at, guid, timeType, sender)
+    if timeType ~= CTKZK_SHOUT then return nil end
+    -- CTKZK_SYNC carries no phase field at all, so the shard comes out of the
+    -- object's GUID, where it sits in the position this addon already reads.
+    local shardID = shardOf(phaseID)
+    if not shardID and type(guid) == "string" and ns.Shard then
+        shardID = ns.Shard.FromGUID(guid)
+    end
+    return {
+        stage = "anchor", zoneID = zoneOf(mapID), shardID = shardID,
+        at = tonumber(at), from = sender, via = "CTKZK",
+    }
+end
+
+decoders.CTKZK_SYNC = function(f, sender)
+    if f[1] ~= "AIRDROP" or tonumber(f[2]) ~= 3 then return nil end
+    return ctkzkAnchor(f[3], nil, f[4], f[5], f[6], sender)
+end
+
+decoders.CTKZK_PSYNC = function(f, sender)
+    if f[1] ~= "PHASE_AIRDROP" or tonumber(f[2]) ~= 5 then return nil end
+    return ctkzkAnchor(f[4], f[5], f[6], f[7], f[8], sender)
+end
+
+-- Which separator each sender chose.
+local SEPARATOR = { CTKZK_SYNC = "|", CTKZK_PSYNC = "|" }
+
 -- Returns a report ready for Note, or nil when the message is not one we can
 -- read. nil is the ordinary case: most prefixes are listened to so /ewc comm
 -- can show that they are alive, not because the payload can be understood.
 function Remote.Decode(prefix, text, sender)
     local decode = decoders[prefix]
     if not decode or type(text) ~= "string" then return nil end
-    local report = decode(fields(text), sender)
+    local report = decode(fields(text, SEPARATOR[prefix]), sender)
     if not report or not report.stage or not report.zoneID then return nil end
     if not report.shardID or not report.at then return nil end
     return report

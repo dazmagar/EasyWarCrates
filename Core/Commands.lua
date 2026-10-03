@@ -113,6 +113,11 @@ local function strangerHistory()
 
     ns.Print(("|cff777777seen before and not tracked -- %d id%s:|r"):format(
         #ids, #ids == 1 and "" or "s"))
+    if (ns.Scanner.sceneryRefused or 0) > 0 then
+        ns.Print(("|cff777777%d sighting%s of art that is never a crate were not filed"
+            .. " -- rares, vendors, lore objects. /ewc scan still shows them all.|r"):format(
+            ns.Scanner.sceneryRefused, ns.Scanner.sceneryRefused == 1 and "" or "s"))
+    end
     if #ids >= ns.Scanner.STRANGER_IDS then
         local evicted = ns.Scanner.strangersEvicted or 0
         local refused = ns.Scanner.strangersRefused or 0
