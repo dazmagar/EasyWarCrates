@@ -1,59 +1,68 @@
 # EasyWarCrates
 
-## [v0.1.0](https://github.com/dazmagar/EasyWarCrates/tree/v0.1.0) (2026-09-26)
-[Full Changelog](https://github.com/dazmagar/EasyWarCrates/commits/v0.1.0) [Previous Releases](https://github.com/dazmagar/EasyWarCrates/releases)
+## [v0.2.0](https://github.com/dazmagar/EasyWarCrates/tree/v0.2.0) (2026-10-02)
+[Full Changelog](https://github.com/dazmagar/EasyWarCrates/commits/v0.2.0) [Previous Releases](https://github.com/dazmagar/EasyWarCrates/releases)
 
-First release.
+Mostly fixes, and two of them were stopping the addon doing the thing it is
+for. Everything here was found by running it, not by reading it.
 
-Tracks War Supply Crate drops in Midnight and predicts where the transport is
-going to release one, while it is still in the air.
+## The map pin
 
-## Predicting
+- **A drop point that repeats now gets a pin every time.** The game holds one
+  map pin, and this addon was deciding whether to place one by remembering
+  where it had last put one *per zone* -- so a pin placed in another zone since
+  had quietly replaced it, and the next crate in the first zone went unmarked
+  because the memory said a pin was already there. Voidstorm's drop point
+  repeats, and three cycles running produced two pins. It asks the game where
+  its pin actually is now.
+- **No automatic pins while the tracker window is closed.** A closed window is
+  you saying you are not doing this right now, and a pin takes the map marker
+  and the minimap arrow with it. `/ewc pin` and clicking a row are you asking,
+  and those still work with the window shut.
 
-- **Reads the transport's heading** as it flies, matches it against known drop
-  points, commits once one candidate clears the others, and pins it. Median
-  error against where crates actually landed is about 0.1% of the map.
-- **Two columns per zone**: when the transport appears, and when the crate is
-  lootable. Cycle lengths, parachute times and the bias in the release estimate
-  are all measured on your own client, and each is reported with how far out it
-  could be.
+## The minimap button
 
-## Shards
+- **Drawn by LibDBIcon.** It was hand-rolled, and any button organiser --
+  Leatrix Plus, ElvUI, SexyMap -- hides a button whose name does not say
+  LibDBIcon and stands its own in the place, which costs the tooltip. So the
+  button vanished for anyone running one of those, and the countdown you hover
+  it for went with it. It sits where it always did, and a position you dragged
+  it to carries over.
 
-- **A timer belongs to one copy of a zone.** A countdown for a different copy
-  is shown blank rather than confidently wrong, and the row says `new shard`.
-- **A shard you have stood in before is remembered for a week**, so an
-  evening's break does not leave the addon blind in zones it had already
-  learned.
+## Sharing with your group
 
-## Your raid
+- **A report says when the stage began, not when the message was sent.** Every
+  re-send used to restart the receiver's descent countdown, so a parachute read
+  as having just opened for the whole of its fall. Both clients need this
+  version for it to help.
+- **A crate you can see is not announced at you.** Somebody re-broadcasting the
+  crate in front of you put a line in your chat every twenty seconds.
+- **Reads CrateTrackerZK.** Its broadcasts were heard and not understood, so a
+  group running it looked silent. Only the times it took from an NPC's shout
+  are trusted, because its other timestamp is whenever somebody's client first
+  drew an icon and that is not the start of a cycle.
+- **Ten more spellings of the six zone names**, from German, French, Spanish
+  and Russian clients, so their reports resolve instead of being dropped. One
+  of those ten was not another language at all: a client that writes the
+  curly apostrophe, which made `Zul'Aman` unreadable to this one.
 
-- **Reads other addons.** Sightings broadcast by Hated Crate Tracker,
-  WarCrateTracker and CrateTrackerZK are picked up and used, ranked below what
-  you saw yourself and labelled with who reported it.
-- **Reads the countdown a raid leader posts** every cycle for every zone the
-  raid is watching, so zones nobody here has flown to still carry a countdown.
-- **A crate somebody watched land keeps its cycle** after the crate is gone.
-- **Left-click a row** to post it to your group with a clickable waypoint. The
-  tooltip names the channel before you click.
+## Measuring
 
-## Spectral Battle Chests
+- **How long a claimed crate stays lootable** is collected now. Nobody has
+  published this, and the store that was meant to hold it had been empty since
+  it was written: the sum needed the claim and the last sighting, and leaving
+  the zone cleared both. Looting a crate and flying on now leaves a floor
+  behind -- "at least this long" -- and standing until the marker goes gives
+  the figure.
 
-- Marked in Slayer's Rise as they appear, with coordinates and how long they
-  have been lying there. Takes a row of its own when the zone has a crate to
-  report too, so a click on either does what that row says.
+## Reading what it knows
 
-## Quiet by default
-
-- **The addon does not talk in chat** unless you turn it on, and never announces
-  to a raid on its own. Everything it would have said is still written to its
-  own log, and the `/ewc` commands always answer in full.
-
-## Says what it does not know
-
-- An unmeasured cycle, an unseen shard and a single-reading parachute time each
-  say so instead of presenting a number. Where a figure has no source, the
-  addon says whose guess it is.
-- Zone names come from your own game. Announcer phrases are known in English
-  and Russian; on any other locale `/ewc yells` reports what it heard instead
-  so the gap is visible rather than silent.
+- **`/ewc phase` lists the shards it can still answer with** and counts the
+  rest in one line instead of printing a cycle count for each. One zone was
+  showing eight records of which one was usable, which read like the zone had
+  been lost.
+- **`/ewc scan seen` keeps collecting.** Its record of untracked vignettes had
+  filled with the ordinary contents of a Midnight zone -- rares, vendors, lore
+  objects -- and was refusing everything new in silence. It no longer files
+  those, says how many it skipped, and `/ewc scan` still shows every vignette
+  in the zone whatever its art.
