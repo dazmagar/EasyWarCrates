@@ -157,10 +157,15 @@ local function take(report, channel)
     local verdict = ns.Remote.Note(ns.remote, report, GetServerTime())
     local live = ns.Scanner and ns.Scanner.LiveCrate and ns.Scanner.LiveCrate(report.zoneID)
     local inView = ns.Remote.AlreadySeen(live, report)
+    -- Tagged only when being in view is what kept it quiet. An anchor is never
+    -- announced whatever is in front of the player, and labelling one "not
+    -- announced" credits a rule that had nothing to do with it -- which is
+    -- what the log did for a CrateTrackerZK anchor in Eversong on 2 Oct.
+    local heldBack = (inView and ns.Remote.RANK[report.stage] ~= nil) or nil
     log({ via = report.via, from = report.from, channel = channel,
           text = ("%s in %s shard %s"):format(report.stage,
               ns.GetZoneAbbr(report.zoneID), tostring(report.shardID)),
-          verdict = verdict, inView = inView or nil })
+          verdict = verdict, inView = heldBack })
     if verdict == "new" or verdict == "refresh" then
         if ns.RefreshWindow then ns.RefreshWindow() end
     end
