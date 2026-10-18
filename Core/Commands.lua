@@ -1140,6 +1140,29 @@ HANDLERS.check = function()
     end)
 end
 
+-- What the hour is paying, and a way to start the measurement over at the top
+-- of a rotation.
+HANDLERS.earn = function(rest)
+    if rest == "reset" then
+        ns.Earn.Reset(ns.earn, GetServerTime())
+        ns.SampleEarnings()
+        if ns.RefreshWindow then ns.RefreshWindow() end
+        return ns.Print("counting from now.")
+    end
+
+    local honor, conquest, span = ns.Earn.Rate(ns.earn, GetServerTime())
+    if not conquest then
+        return ns.Print(("|cff777777%dm measured so far; a rate needs %dm.|r"):format(
+            math.floor((span or 0) / 60), math.floor(ns.Earn.MIN_SPAN / 60)))
+    end
+    local got = ns.Earn.Session(ns.earn)
+    ns.Print(("|cffffd100%d|r conquest and |cffffd100%d|r honor an hour"):format(
+        conquest, honor))
+    ns.Print(("  |cff777777%d conquest and %d honor in the last %dm|r"):format(
+        got.conquest, got.honor, math.floor(got.span / 60)))
+    ns.Print("  |cff777777'/ewc earn reset' starts over|r")
+end
+
 HANDLERS.help = function()
     ns.Print("commands:")
     ns.Print("  /ewc window   -- show or hide the tracker window")
@@ -1148,6 +1171,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc export   -- your parachute times and drop points as a string to hand over")
     ns.Print("  /ewc import   -- take somebody else's string, with a box to paste it into")
     ns.Print("  /ewc check    -- who in your group is running this, and on which version")
+    ns.Print("  /ewc earn     -- conquest and honor an hour, with 'reset' to start over")
     ns.Print("  /ewc pin      -- test placing a map pin where you stand")
     ns.Print("  /ewc status   -- what zone the addon thinks you are in")
     ns.Print("  /ewc map      -- the map chain above you, and what it resolves to")

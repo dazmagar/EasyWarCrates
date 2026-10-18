@@ -305,12 +305,34 @@ local function refresh()
 
     frame.headRight:SetText("plane    drop")
 
+    -- What the hour is paying. Conquest first: it is why anybody flies to a
+    -- crate, and honor comes along with it whatever you do.
+    local honor, conquest, span = ns.Earn.Rate(ns.earn, now)
+    local pay
+    if conquest then
+        local got = ns.Earn.Session(ns.earn)
+        -- With the span, because a four-digit rate measured over eleven
+        -- minutes is one lucky crate and the player can only tell by knowing
+        -- how long it has been watching.
+        pay = ("|cffffd100%d|r conquest/h  |cffffd100%d|r honor/h  |cff555555%d + %d in %dm|r")
+            :format(conquest, honor, got.conquest, got.honor, math.floor(span / 60))
+    elseif span and span > 0 then
+        -- Said rather than left blank, so an empty strip is not read as an
+        -- evening that paid nothing.
+        pay = ("|cff555555measuring what the hour pays -- %dm so far|r")
+            :format(math.floor(span / 60))
+    end
+    frame.foot:SetText(pay or "")
+    -- Taken from what was just decided rather than read back off the widget:
+    -- GetText on a font string set to "" can answer nil, and nil is not "".
+    local footRoom = pay and 14 or 0
+
     -- The headline only takes room when it has something in it.
     local headRoom = head and 16 or 0
     frame.header:SetPoint("TOPLEFT", PAD, -(24 + headRoom))
     frame.header:SetPoint("TOPRIGHT", -PAD, -(24 + headRoom))
     frame.body:SetPoint("TOPLEFT", 0, -(40 + headRoom))
-    frame:SetHeight(44 + headRoom + math.max(shown, 3) * (ROW_H + ROW_GAP) + PAD)
+    frame:SetHeight(44 + headRoom + footRoom + math.max(shown, 3) * (ROW_H + ROW_GAP) + PAD)
 end
 ns.RefreshWindow = refresh
 
@@ -385,6 +407,14 @@ local function build()
     frame.head:SetPoint("TOPLEFT", PAD, -22)
     frame.head:SetPoint("TOPRIGHT", -PAD, -22)
     frame.head:SetJustifyH("LEFT")
+
+    -- The pay strip. Along the bottom rather than in the headline: the
+    -- headline is where the live prediction goes, and that is the line
+    -- somebody is reading when a transport is up.
+    frame.foot = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    frame.foot:SetPoint("BOTTOMLEFT", PAD, PAD - 2)
+    frame.foot:SetPoint("BOTTOMRIGHT", -PAD, PAD - 2)
+    frame.foot:SetJustifyH("LEFT")
 
     frame.header = CreateFrame("Frame", nil, frame)
     frame.header:SetPoint("TOPLEFT", PAD, -24)

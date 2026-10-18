@@ -36,6 +36,7 @@ ADDON_FILES = [
     "Track/Phase.lua",
     "Track/Airtime.lua",
     "Track/Share.lua",
+    "Track/Earn.lua",
     "UI/Model.lua",
     "UI/Manage.lua",
 ]

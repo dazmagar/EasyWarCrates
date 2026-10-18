@@ -548,9 +548,54 @@ function ns.OnPrediction(zoneID, result, fit)
     if firm then shareSpot(zoneID, s, nil, eta and eta.toGround) end
 end
 
+-- What the rotation is paying, sampled.
+--
+-- On a ticker and not only on CURRENCY_DISPLAY_UPDATE, because Track/Earn.lua
+-- reads a long gap between samples as the player having been away: half an
+-- hour of flying about earning nothing is still half an hour of farming, and
+-- it contains no currency events at all.
+--
+-- The ids come from the game where it offers them. Hardcoding 1792 and 1602
+-- alone would be a figure that silently reads zero per hour the day they move.
+local EARN_TICK = 60
+local CURRENCY_CONSTS = Constants and Constants.CurrencyConsts
+local HONOR_ID = CURRENCY_CONSTS and CURRENCY_CONSTS.HONOR_CURRENCY_ID or 1792
+local CONQUEST_ID = CURRENCY_CONSTS and CURRENCY_CONSTS.CONQUEST_CURRENCY_ID or 1602
+local earnTicker
+
+local function currencyTotal(id)
+    if not C_CurrencyInfo or not C_CurrencyInfo.GetCurrencyInfo then return nil end
+    local ok, info = pcall(C_CurrencyInfo.GetCurrencyInfo, id)
+    -- nil rather than 0 when it cannot be read. Earn.Note refuses a nil, and
+    -- a zero would be read as the player having spent everything.
+    return (ok and type(info) == "table" and tonumber(info.quantity)) or nil
+end
+
+function ns.SampleEarnings()
+    ns.earn = ns.earn or ns.Earn.New()
+    return ns.Earn.Note(ns.earn, GetServerTime(),
+        currencyTotal(HONOR_ID), currencyTotal(CONQUEST_ID))
+end
+
+function ns.StartEarnings()
+    ns.earn = ns.earn or ns.Earn.New()
+    ns.SampleEarnings()
+    if not earnTicker and C_Timer and C_Timer.NewTicker then
+        earnTicker = C_Timer.NewTicker(EARN_TICK, ns.SampleEarnings)
+    end
+end
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:SetScript("OnEvent", function(_, event, name)
+    if event == "PLAYER_ENTERING_WORLD" then
+        -- Here and not at ADDON_LOADED: the player's bank is not readable
+        -- until the player exists, and a baseline of zero makes the bank
+        -- itself read as an hour's wage. Fires on every loading screen too,
+        -- which is wanted -- a sample on each side keeps the gap short.
+        return ns.StartEarnings()
+    end
     if event ~= "ADDON_LOADED" or name ~= ADDON then return end
     EasyWarCratesDB = applyDefaults(EasyWarCratesDB or {})
     ns.db = EasyWarCratesDB

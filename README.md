@@ -82,6 +82,7 @@ corrected from a command line does not get corrected.
 | `/ewc export` | your parachute times and drop points as a string to hand to someone |
 | `/ewc import` | take somebody else's string, with a box to paste it into |
 | `/ewc check` | who in your group is running this, and on which version |
+| `/ewc earn` | conquest and honor an hour, measured |
 | `/ewc yells` | what the crate announcer said, and whether it counted |
 | `/ewc scan` | every vignette in range, raw. Use this first after a patch |
 | `/ewc shard` | cross-check the shard against a creature's GUID |
