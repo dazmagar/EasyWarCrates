@@ -43,6 +43,14 @@ local LIFETIME = { flying = 240, falling = 200, ground = 90, claimed = 90,
                    anchor = 1200, here = 900 }
 Remote.LIFETIME = LIFETIME
 
+-- A report can arrive with a position and no shard: RCT's two map-pin lines
+-- say where a crate is coming down and nothing about which copy of the zone it
+-- is in. Held under a key no shard can take, because shardOf only ever returns
+-- numbers -- so one of these can neither pose as a copy of the zone nor be
+-- counted as a second crate beside a numbered one.
+local SHARD_UNKNOWN = "?"
+Remote.SHARD_UNKNOWN = SHARD_UNKNOWN
+
 -- Matches Model.LiveFor, because both feed the same sorted list and two
 -- orderings would put a remote parachute above a local one or below it
 -- depending on which built the row.
@@ -88,6 +96,20 @@ function Remote.Note(store, report, now)
     store[zoneID] = store[zoneID] or {}
     local held = store[zoneID][shardID]
     if held and held.at >= at then return "stale" end
+    -- One crate, three of their lines. RCT announces every vignette in
+    -- instantMarkIDs in the same words, and the parachute, the crate on the
+    -- ground and the claimed crate are three vignettes -- so a crate that is
+    -- spotted, lands and gets looted sends "Dropped - Location" three times.
+    -- The later two describe a crate already down or already gone, and taken
+    -- as fresh sightings they restart the fall: a Slayer's Rise row counted
+    -- down to a landing while the raid was flying away from the empty spot.
+    --
+    -- Only the first of them is news. Bounded by the stage's lifetime, because
+    -- the next cycle is a different crate and must not be suppressed with it.
+    if held and held.via == "RCT" and report.via == "RCT"
+        and held.stage == stage and (now - held.at) <= LIFETIME[stage] then
+        return "repeat"
+    end
 
     store[zoneID][shardID] = {
         stage = stage,
@@ -524,6 +546,63 @@ function Remote.FromCountdown(text, sender, zoneByName, now, intervalOf)
     }
 end
 
+-- RCT's two lines that carry a map pin, which is the only place any of their
+-- traffic puts a position:
+--
+--   Hated Gaming War Supply Crate - Predicted Drop Location: <zone> <pin>
+--   Hated Gaming War Supply Crate Dropped - Location: <zone> <pin>
+--
+-- Worth more than their alert. The first goes out while the transport is still
+-- flying, so it names the spot two or three minutes before the crate is
+-- released, for a zone nobody here can see -- and the pin carries the map id,
+-- so this is the one line of theirs that does not go through the foreign-name
+-- table and cannot be lost to the sender's locale.
+--
+-- Both come from the leader: their GroupAnnounce sends nothing unless
+-- UnitIsGroupLeader, and neither of these two calls passes the flag that would
+-- let an assistant send as well.
+--
+-- Matched on their wording and not on the pin alone. A player pinning a rare
+-- posts the same link, and so does this addon's own announcement.
+local PIN = "|Hworldmap:(%d+):(%d+):(%d+)"
+
+-- Their Dropped line fires for every vignette in instantMarkIDs in the same
+-- words -- the parachute, the crate on the ground and the claimed crate -- so
+-- it cannot tell them apart, and one crate sends it up to three times. Read as
+-- falling, the earliest of the three: "falling" about a crate already down
+-- costs the reader nothing, while "on the ground" about one still in the air
+-- sends them early. Remote.Note is what stops the repeats restarting it.
+local function pinStage(text)
+    if text:find("War Supply Crate %- Predicted Drop Location:") then return "flying" end
+    if text:find("War Supply Crate Dropped %- Location:") then return "falling" end
+    return nil
+end
+
+function Remote.FromPin(text, sender, now)
+    if type(text) ~= "string" or type(sender) ~= "string" or sender == "" then return nil end
+    local stage = pinStage(text)
+    if not stage then return nil end
+
+    local mapID, x, y = text:match(PIN)
+    if not mapID then return nil end
+    local zoneID = zoneOf(mapID)
+    if not zoneID or not ns.ZONES[zoneID] then return nil end
+
+    return {
+        stage = stage,
+        zoneID = zoneID,
+        -- They send no shard on these two at all.
+        shardID = SHARD_UNKNOWN,
+        at = tonumber(now) or 0,
+        from = sender,
+        via = "RCT",
+        -- The link counts in ten-thousandths of the map; everything here
+        -- speaks fractions, and 4690 is 0.4690 exactly.
+        x = tonumber(x) / 10000,
+        y = tonumber(y) / 10000,
+    }
+end
+
 -- HGLog, the log RCT bundles, which shares in the clear on HGLOG1:
 --
 --   <ver>|<type>|<chunk>|<rows>      rows: zoneID,ts,shardID;zoneID,ts,shardID
@@ -606,7 +685,11 @@ function Remote.ShardFor(store, zoneID, now)
     if not shards then return nil end
     local best, bestShard
     for shardID, entry in pairs(shards) do
-        if alive(entry, now) then
+        -- A report filed without a shard says where a crate is coming down,
+        -- not which copy of the zone anybody is standing in. It would answer
+        -- this question loudly if allowed to -- those lines come from the
+        -- leader, and a leader's word outranks everything below.
+        if type(shardID) == "number" and alive(entry, now) then
             local better
             if not best then
                 better = true

@@ -295,6 +295,12 @@ function Comm.OnChat(text, sender, channel)
     if isSelf(sender) then return end
     if not rateOK(sender) then return end
 
+    -- Their two lines with a map pin in them, read first because they are the
+    -- only ones that carry a position and the only ones that do not depend on
+    -- the sender's language.
+    local pinned = ns.Remote.FromPin(text, sender, GetServerTime())
+    if pinned then return take(pinned, channel) end
+
     local report, unresolved, shardID = ns.Remote.FromAlert(
         text, sender, zoneNames(), GetServerTime())
     if report then return take(report, channel) end

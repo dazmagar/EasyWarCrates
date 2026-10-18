@@ -762,3 +762,156 @@ t.test("a zone this addon does not track is refused by Note", function()
     t.eq(r.zoneID, 84)
     t.eq(Remote.Note(Remote.New(), r, T0), "invalid", "Stormwind is not a crate zone")
 end)
+-- RCT's two lines with a map pin in them, which it posts to the raid while the
+-- transport is still flying and again when the crate is out of it:
+--
+--   Hated Gaming War Supply Crate - Predicted Drop Location: Zul'Aman <pin>
+--   Hated Gaming War Supply Crate Dropped - Location: Zul'Aman <pin>
+--
+-- The pin is the valuable part. It carries the map id and the position, so
+-- unlike their "Flying in <zone>" alert neither depends on the sender's
+-- language, and the position is the one thing none of their other lines has.
+--
+-- Neither line carries a shard, which is why Remote.SHARD_UNKNOWN exists.
+local function pin(mapID, x, y)
+    return ("|cffffff00|Hworldmap:%d:%d:%d|h[Map Pin Location]|h|r"):format(mapID, x, y)
+end
+
+local PREDICTED = "Hated Gaming War Supply Crate - Predicted Drop Location: Zul'Aman "
+local DROPPED = "Hated Gaming War Supply Crate Dropped - Location: Zul'Aman "
+
+t.test("a predicted drop location is read off the pin, not off the zone name", function()
+    local r = Remote.FromPin(PREDICTED .. pin(ZA, 4690, 6220), "Rdy", T0)
+    t.eq(r.stage, "flying")
+    t.eq(r.zoneID, ZA)
+    t.eq(r.via, "RCT")
+    t.eq(r.from, "Rdy")
+    t.eq(r.shardID, Remote.SHARD_UNKNOWN, "they do not send one")
+    -- The link carries ten-thousandths; everything here speaks fractions.
+    t.eq(r.x, 0.4690)
+    t.eq(r.y, 0.6220)
+end)
+
+-- Their "Dropped" line fires on the parachute and on the landing alike -- both
+-- are in the same instantMarkIDs table -- and the text is identical, so this
+-- cannot tell them apart. Called falling, which is the earlier of the two: a
+-- row saying "falling" about a crate already down costs a player nothing, and
+-- "on the ground" about one still in the air sends them early.
+t.test("a dropped crate is read as falling, the earlier of the two it could be", function()
+    local r = Remote.FromPin(DROPPED .. pin(ZA, 3675, 6790), "Rdy", T0)
+    t.eq(r.stage, "falling")
+    t.eq(r.x, 0.3675)
+end)
+
+t.test("the pin resolves a map id this addon knows by another name", function()
+    local r = Remote.FromPin(PREDICTED .. pin(2536, 5000, 5000), "Rdy", T0)
+    t.eq(r.zoneID, ZA, "2536 is Atal'Aman, which is Zul'Aman")
+end)
+
+t.test("a pin on a map with no crates is not a crate report", function()
+    t.eq(Remote.FromPin(PREDICTED .. pin(84, 5000, 5000), "Rdy", T0), nil)
+end)
+
+-- Their AppendWaypointLink adds nothing when the client has no waypoint set,
+-- and the bare line then says only that something is happening in a zone it
+-- names in the sender's language. Their own alert already says that better.
+t.test("the same line without a pin carries nothing worth holding", function()
+    t.eq(Remote.FromPin("Hated Gaming War Supply Crate - Predicted Drop Location: Zul'Aman",
+        "Rdy", T0), nil)
+end)
+
+t.test("a map pin somebody posted for their own reasons is not a crate", function()
+    t.eq(Remote.FromPin("meet me here " .. pin(ZA, 4690, 6220), "Rdy", T0), nil)
+    t.eq(Remote.FromPin(pin(ZA, 4690, 6220), "Rdy", T0), nil)
+end)
+
+-- Our own announcements carry a pin too, and reading one back as somebody
+-- else's sighting would turn this client into its own source.
+t.test("our own announcement is not read as theirs", function()
+    t.eq(Remote.FromPin("ZA  shard 44 -- crate landing in 1:20 " .. pin(ZA, 4690, 6220),
+        "Dmitrii", T0), nil)
+    t.eq(Remote.FromPin("War crate incoming: Zul'Aman 46.9, 62.2 " .. pin(ZA, 4690, 6220),
+        "Dmitrii", T0), nil)
+end)
+
+t.test("a shardless report is held, and answers for the zone", function()
+    local store = Remote.New()
+    local r = Remote.FromPin(PREDICTED .. pin(ZA, 4690, 6220), "Rdy", T0)
+    t.eq(Remote.Note(store, r, T0), "new")
+    local entry = Remote.For(store, ZA, T0)
+    t.eq(entry.stage, "flying")
+    t.eq(entry.x, 0.4690)
+    t.eq(entry.from, "Rdy")
+end)
+
+-- The regression this guard exists for. These lines come from the group
+-- leader, and ShardFor prefers a leader's word over anybody else's, so an
+-- entry filed with no shard would have been handed back as the shard the raid
+-- is in -- a question it says nothing about.
+t.test("a shardless report never answers which shard the zone is in", function()
+    local store = Remote.New()
+    local r = Remote.FromPin(PREDICTED .. pin(ZA, 4690, 6220), "Rdy", T0)
+    r.leader = true
+    Remote.Note(store, r, T0)
+    t.eq(Remote.ShardFor(store, ZA, T0), nil, "nobody said which copy of the zone this is")
+
+    -- And a real shard still answers, with the unreadable one alongside it.
+    Remote.Note(store, { zoneID = ZA, shardID = 44, stage = "here", at = T0, from = "Scout" }, T0)
+    t.eq(Remote.ShardFor(store, ZA, T0), 44)
+end)
+
+-- One crate, three of their lines.
+--
+-- instantMarkIDs holds the parachute (2967), the crate on the ground (6066)
+-- and the claimed crate (6067/6068), and every one of them announces in the
+-- same words -- announcedVignettes is keyed by vignette guid, and those are
+-- three different vignettes. So a crate that is spotted, lands and is looted
+-- sends the identical "Dropped - Location" line three times.
+--
+-- Read as three sightings, the last one starts a fresh descent countdown for a
+-- crate that is already in somebody's bags. Dmitrii's, 18 Oct: a Slayer's Rise
+-- row still counted down to a landing after the raid had looted the crate and
+-- flown to Eversong.
+t.test("one crate announced three times is one crate", function()
+    local store = Remote.New()
+    local seen = Remote.FromPin(DROPPED .. pin(ZA, 3675, 6790), "Rdy", T0)
+    t.eq(Remote.Note(store, seen, T0), "new")
+    -- It lands: their 6066, same words.
+    t.eq(Remote.Note(store, Remote.FromPin(DROPPED .. pin(ZA, 3675, 6790), "Rdy", T0 + 55),
+        T0 + 55), "repeat")
+    -- Somebody loots it: 6067, same words again.
+    t.eq(Remote.Note(store, Remote.FromPin(DROPPED .. pin(ZA, 3676, 6791), "Rdy", T0 + 70),
+        T0 + 70), "repeat")
+    t.eq(Remote.For(store, ZA, T0 + 70).at, T0,
+        "the fall is still dated to the only moment anybody saw it begin")
+end)
+
+-- The suppression may not outlive one crate: the next cycle is 18 minutes
+-- later and it is a different crate falling.
+t.test("the next cycle is a new crate and not a repeat", function()
+    local store = Remote.New()
+    Remote.Note(store, Remote.FromPin(DROPPED .. pin(ZA, 3675, 6790), "Rdy", T0), T0)
+    t.eq(Remote.Note(store, Remote.FromPin(DROPPED .. pin(ZA, 4690, 6220), "Rdy", T0 + 1090),
+        T0 + 1090), "refresh")
+end)
+
+-- Their prediction and their drop are different news, two or three minutes
+-- apart, and the second is the one that says a crate is in the air now.
+t.test("a fall is not suppressed by the prediction that came before it", function()
+    local store = Remote.New()
+    Remote.Note(store, Remote.FromPin(PREDICTED .. pin(ZA, 4690, 6220), "Rdy", T0), T0)
+    t.eq(Remote.Note(store, Remote.FromPin(DROPPED .. pin(ZA, 4690, 6220), "Rdy", T0 + 90),
+        T0 + 90), "refresh")
+    t.eq(Remote.For(store, ZA, T0 + 90).stage, "falling")
+end)
+
+-- A scout running this addon sends the same stage again as the parachute comes
+-- down, and that is a real second sighting: they can still see it, and their
+-- figure for how long is left is newer than the last one.
+t.test("a sighting from this addon still refreshes", function()
+    local store = Remote.New()
+    Remote.Note(store, { stage = "falling", zoneID = ZA, shardID = 44, at = T0,
+        from = "Scout", x = 0.46, y = 0.62, toGround = 60 }, T0)
+    t.eq(Remote.Note(store, { stage = "falling", zoneID = ZA, shardID = 44, at = T0 + 30,
+        from = "Scout", x = 0.46, y = 0.62, toGround = 30 }, T0 + 30), "refresh")
+end)
