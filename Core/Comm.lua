@@ -57,8 +57,24 @@ local HEARD_MAX = 20
 local heard = {}
 Comm.heard = heard
 Comm.handshakes = 0
+Comm.secretSenders = 0
 
 local zoneByName
+
+-- A sender the client has decided this addon may not read. 12.1 made senders
+-- secret in some circumstances and 12.1.5 widened the mechanism: tostring
+-- keeps the secret, and nameOnly indexing one to cut the realm off throws.
+-- That call sits in isSelf, the first line of both handlers, so one unreadable
+-- sender took down the reader for every addon's traffic in that event and not
+-- only for its own message -- once in Dmitrii's log on 10 Oct at line 64.
+--
+-- Refused rather than guessed at: a sender that cannot be read cannot be told
+-- apart from this client, so its report could be our own coming back, and it
+-- cannot be credited to anybody on screen either. Counted so /ewc comm can say
+-- so, because a silent refusal looks exactly like an empty channel.
+local function unreadable(sender)
+    return issecretvalue ~= nil and issecretvalue(sender) == true
+end
 
 local function nameOnly(sender)
     return (tostring(sender or "")):match("^([^-]+)") or sender
@@ -204,6 +220,10 @@ function Comm.OnAddonMessage(prefix, text, channel, sender)
     if not ns.db or not ns.db.enabled then return end
     local allowed = (prefix == OURS) and OUR_CHANNELS or THEIR_CHANNELS
     if not allowed[channel] then return end
+    if unreadable(sender) then
+        Comm.secretSenders = (Comm.secretSenders or 0) + 1
+        return
+    end
     if isSelf(sender) then return end
     if channel ~= "GUILD" and not inGroupNow(sender) then return end
     if not rateOK(sender) then return end
@@ -268,6 +288,10 @@ end
 
 function Comm.OnChat(text, sender, channel)
     if not ns.db or not ns.db.enabled then return end
+    if unreadable(sender) then
+        Comm.secretSenders = (Comm.secretSenders or 0) + 1
+        return
+    end
     if isSelf(sender) then return end
     if not rateOK(sender) then return end
 

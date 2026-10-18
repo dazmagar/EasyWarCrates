@@ -510,7 +510,7 @@ HANDLERS.comm = function()
             .. " prefixes all addons may hold between them|r"):format(
             table.concat(missing, ", ")))
     end
-    ns.Print(("reports held: %d%s%s"):format(ns.Remote.Count(ns.remote, GetServerTime()),
+    ns.Print(("reports held: %d%s%s%s"):format(ns.Remote.Count(ns.remote, GetServerTime()),
         (ns.Comm.handshakes or 0) > 0
             and ("  |cff777777(%d token handshakes ignored -- somebody's RCT is talking)|r")
                 :format(ns.Comm.handshakes)
@@ -521,6 +521,12 @@ HANDLERS.comm = function()
         (ns.Comm.rateLimited or 0) > 0
             and ("  |cffff8800(%d dropped: one sender over 20 messages in 5s)|r")
                 :format(ns.Comm.rateLimited)
+            or "",
+        -- The client refusing to name a sender is not a quiet channel, and
+        -- without this line it would read as one.
+        (ns.Comm.secretSenders or 0) > 0
+            and ("  |cffff8800(%d dropped: the client would not let us read who sent them)|r")
+                :format(ns.Comm.secretSenders)
             or ""))
 
     local heard = ns.Comm.heard
@@ -529,6 +535,7 @@ HANDLERS.comm = function()
         -- first. Dmitrii saw "alone you will see nothing" on the same screen
         -- as 122 counted messages.
         local counted = (ns.Comm.handshakes or 0) + (ns.Comm.rateLimited or 0)
+            + (ns.Comm.secretSenders or 0)
         if counted > 0 then
             return ns.Print(("|cff777777%d message%s arrived and none of them carried a"
                 .. " sighting -- counted above rather than listed here. So the channel"

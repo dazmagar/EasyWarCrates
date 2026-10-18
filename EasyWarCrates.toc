@@ -1,4 +1,4 @@
-## Interface: 120100
+## Interface: 120105, 120100
 ## Title: EasyWarCrates
 ## Notes: Tracks War Supply Crate drops and predicts where the transport is headed.
 ## Version: 0.2.0
