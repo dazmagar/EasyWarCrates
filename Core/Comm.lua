@@ -419,8 +419,8 @@ function Comm.Announce(zoneID, x, y)
     if not ok then return "no-pin" end
     lastAnnounced[zoneID] = now
 
-    local text = ("War crate incoming: %s %.1f, %.1f%s"):format(
-        ns.GetZoneName(zoneID), x * 100, y * 100, link and (" " .. link) or "")
+    local text = ns.Phrase("INCOMING", ns.GetZoneName(zoneID), x * 100, y * 100,
+        link and (" " .. link) or "")
     pcall(SendChatMessage, text, IsInRaid() and "RAID_WARNING" or "PARTY")
     return "sent"
 end
@@ -514,8 +514,7 @@ function Comm.AnnounceAddon()
     if (now - lastAddonSaid) < ADDON_COOLDOWN then return "too-soon" end
     lastAddonSaid = now
 
-    pcall(SendChatMessage,
-        "Using EasyWarCrates for war crate timers and drop predictions.", channel)
+    pcall(SendChatMessage, ns.Phrase("ADDON_PLUG"), channel)
     return "sent", channel
 end
 

@@ -52,6 +52,10 @@ local DEFAULTS = {
     -- Off by design. Leading a raid is not consent to have an addon speak
     -- in its chat, and only a leader or assistant can send at all.
     announce    = false,
+    -- Off by design too, and for a different reason: an announcement is read
+    -- by other people, whose language this client cannot know. English is the
+    -- shared tongue until somebody says their group does not need it.
+    announceLocale = false,
     minimap     = true,   -- show the minimap button
     windowShown = true,   -- show the tracker window
     -- Deliberately absent: minimapAngle and window. They hold where the player

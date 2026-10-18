@@ -83,7 +83,7 @@ corrected from a command line does not get corrected.
 | `/ewc scan` | every vignette in range, raw. Use this first after a patch |
 | `/ewc shard` | cross-check the shard against a creature's GUID |
 
-The settings panel holds eight switches and one button. Everything that is a
+The settings panel holds nine switches and one button. Everything that is a
 list of records lives behind that button.
 
 ## What it deliberately does not do

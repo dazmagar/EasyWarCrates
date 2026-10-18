@@ -396,6 +396,47 @@ end
 -- GUID's field layout, so this prints both side by side with every field
 -- numbered. Target or mouseover any creature and run it.
 -- Send the call by hand, and say why it did not go if it did not.
+-- Previews the announcement lines in a language without that client being
+-- installed. Without this the setting is unverifiable by anyone whose client
+-- is already English, which is most people who would work on it: they would
+-- tick the box, see no change, and have no way to tell a working feature from
+-- a broken one.
+HANDLERS.locale = function(which)
+    local locales = ns.ANNOUNCE_LOCALES or {}
+    if not which or which == "" then
+        local names = {"enUS (English, the fallback)"}
+        for code in pairs(locales) do names[#names + 1] = code end
+        table.sort(names)
+        ns.Print(("announcements go out in %s. Translated: %s"):format(
+            ns.AnnounceLocale(), table.concat(names, ", ")))
+        return ns.Print("  /ewc locale <code> -- preview the lines in that language")
+    end
+
+    if which ~= "enUS" and not locales[which] then
+        return ns.Print(("no translation for %q; it would fall back to English."):format(which))
+    end
+
+    -- Restored whatever happens: a preview that leaked would change what goes
+    -- into other people's chat.
+    local was = ns.announcePreview
+    ns.announcePreview = which
+    local ok = pcall(function()
+        ns.Print(("announcement lines in %s:"):format(which))
+        ns.Print("  " .. ns.Phrase("INCOMING", "Zul'Aman", 44.2, 61.8, ""))
+        ns.Print("  " .. ns.Phrase("TRANSPORT_IN", "Zul'Aman", "2:30", "4:10",
+            ns.Phrase("SHARD", "63")))
+        ns.Print("  " .. ns.Phrase("TRANSPORT_AIR", "Eversong Woods", "", ""))
+        ns.Print("  " .. ns.Phrase("CRATE_LANDING", "Harandar", "0:48", ""))
+        ns.Print("  " .. ns.Phrase("CRATE_GROUND", "Voidstorm", ns.Phrase("SO_FAR", "0:20"), ""))
+        ns.Print("  " .. ns.Phrase("CRATE_GROUND_OURS", "Voidstorm", ns.Phrase("LEFT", "1:40"), ""))
+        ns.Print("  " .. ns.Phrase("SPECTRAL", "Slayer's Rise",
+            ns.Phrase("AT", 52.1, 38.4), ns.Phrase("SO_FAR", "0:15"), ""))
+        ns.Print("  " .. ns.Phrase("ADDON_PLUG"))
+    end)
+    ns.announcePreview = was
+    if not ok then ns.Print("that locale table is malformed; see tests/spec_locale.lua") end
+end
+
 HANDLERS.announce = function()
     local zoneID = ns.Zones.Normalize(C_Map.GetBestMapForUnit("player"))
     if not zoneID then return ns.Print("not standing in a tracked zone.") end
@@ -991,6 +1032,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc waypoint -- toggle the map pin on a prediction")
     ns.Print("  /ewc chatter  -- toggle whether the addon talks in chat at all")
     ns.Print("  /ewc verbose  -- toggle scan narration")
+    ns.Print("  /ewc locale   -- what language announcements go out in, and a preview")
     ns.Print("  /ewc wipe     -- clear timers")
 end
 

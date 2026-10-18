@@ -429,7 +429,7 @@ end
 function Model.Announcement(row, now)
     if type(row) ~= "table" or not row.zoneID then return nil end
     local where = ns.GetZoneName(row.zoneID)
-    local shard = row.shardID and ("  shard %s"):format(tostring(row.shardID)) or ""
+    local shard = row.shardID and ns.Phrase("SHARD", tostring(row.shardID)) or ""
     local live = row.live
 
     local function clock(seconds)
@@ -445,10 +445,10 @@ function Model.Announcement(row, now)
     local spectralLine = nil
     if row.spectral then
         local age = (now and row.spectral.since)
-            and (" (%s so far)"):format(clock(now - row.spectral.since)) or ""
+            and ns.Phrase("SO_FAR", clock(now - row.spectral.since)) or ""
         local at = (row.spectral.x and row.spectral.y)
-            and (" at %.1f, %.1f"):format(row.spectral.x * 100, row.spectral.y * 100) or ""
-        spectralLine = ("%s: SPECTRAL CHEST on the ground%s%s%s"):format(
+            and ns.Phrase("AT", row.spectral.x * 100, row.spectral.y * 100) or ""
+        spectralLine = ns.Phrase("SPECTRAL",
             where, at, age, shard)
     end
 
@@ -492,26 +492,26 @@ function Model.Announcement(row, now)
             -- decides the answer: a raid will cross a zone for a crate that
             -- landed five seconds ago and not for one that landed two minutes
             -- ago.
-            local age = (now and live.since) and (" (%s so far)"):format(clock(now - live.since))
+            local age = (now and live.since) and ns.Phrase("SO_FAR", clock(now - live.since))
                 or ""
             if live.mine then
-                local left = live.toGone and (", %s left"):format(clock(live.toGone)) or age
-                return ("%s: crate ON THE GROUND, ours%s%s"):format(where, left, shard), "crate"
+                local left = live.toGone and ns.Phrase("LEFT", clock(live.toGone)) or age
+                return ns.Phrase("CRATE_GROUND_OURS", where, left, shard), "crate"
             end
-            return ("%s: crate ON THE GROUND%s%s"):format(where, age, shard), "crate"
+            return ns.Phrase("CRATE_GROUND", where, age, shard), "crate"
         end
         if live.phase == "falling" then
-            return ("%s: crate landing in %s%s"):format(where,
+            return ns.Phrase("CRATE_LANDING", where,
                 live.toGround and clock(live.toGround) or "moments", shard), "crate"
         end
-        return ("%s: transport in the air%s%s"):format(where,
+        return ns.Phrase("TRANSPORT_AIR", where,
             live.toGround and (", down in " .. clock(live.toGround)) or "", shard), "crate"
     end
 
     if spectralLine then return spectralLine, "spectral" end
 
     if row.remaining then
-        return ("%s: transport in %s, lootable in %s%s"):format(where,
+        return ns.Phrase("TRANSPORT_IN", where,
             clock(row.remaining),
             row.onGround and clock(row.onGround) or "?", shard), "crate"
     end

@@ -64,6 +64,13 @@ local function build()
         .. "everyone. Sending moves your own pin: the link the game will accept is the "
         .. "one made from your waypoint.")
 
+    checkbox("announceLocale", "Announce in your client's language",
+        "Off means English, which is what a mixed group can read. On sends the "
+        .. "announcement in this client's language, which is right on a realm that "
+        .. "speaks one. Nothing else changes: the window, the settings and the /ewc "
+        .. "answers stay English, because those are what a bug report is pasted from. "
+        .. "A language nobody has translated yet falls back to English line by line.")
+
     header("Window")
 
     checkbox("minimap", "Minimap button", "Show the button on the minimap.",

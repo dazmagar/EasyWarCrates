@@ -24,6 +24,7 @@ ADDON_FILES = [
     "Data/DropPoints.lua",
     "Data/Vignettes.lua",
     "Data/Announcers.lua",
+    "Data/Locale.lua",
     "Core/Zones.lua",
     "Detect/Shard.lua",
     "Detect/Heading.lua",
@@ -148,6 +149,36 @@ def check_secrets() -> int:
     return found
 
 
+NS_DEFINITION = re.compile(
+    r"^\s*(?:function\s+(ns(?:\.[A-Za-z_]\w*)+)\s*\("
+    r"|(ns(?:\.[A-Za-z_]\w*)+)\s*=\s*function)",
+    re.MULTILINE)
+
+
+def check_namespace() -> int:
+    # Every file writes into the one shared ns table and the last loaded wins,
+    # silently. This harness loads 18 of the 26, so a name defined once in each
+    # half cannot be caught by running them: that is how ns.Say came to mean
+    # "print a line" in Core/Main.lua and "format an announcement" in
+    # Data/Locale.lua, and why clicking a row posted nothing for a day.
+    seen, clashes = {}, 0
+    for name in ADDON_FILES + GAME_ONLY_FILES:
+        text = (ROOT / name).read_text(encoding="utf-8")
+        for m in NS_DEFINITION.finditer(text):
+            key = m.group(1) or m.group(2)
+            line = text.count("\n", 0, m.start()) + 1
+            if key in seen:
+                where, first = seen[key]
+                print(f"CLASH   {key} defined at {where}:{first} and again at "
+                      f"{name}:{line} -- whichever loads last is the only one")
+                clashes += 1
+            else:
+                seen[key] = (name, line)
+    if not clashes:
+        print(f"ok   namespace                  {len(seen)} ns functions, each defined once")
+    return clashes
+
+
 def main() -> int:
     # Windows hands stdout a cp1252 encoder, which raises on the first
     # non-ASCII character. A spec that fails on a Cyrillic announcer phrase
@@ -161,12 +192,14 @@ def main() -> int:
     syntax_bad = check_syntax()
     lint_bad = lint.main(ROOT, ADDON_FILES + GAME_ONLY_FILES)
     secrets_bad = check_secrets()
+    clash_bad = check_namespace()
     passed, failed = run_specs()
     print("-" * 58)
     print(f"{passed} passed, {failed} failed, "
           f"{syntax_bad} syntax errors, {lint_bad} lint problems"
-          + (f", {secrets_bad} leaked secrets" if secrets_bad else ""))
-    return 1 if (failed or syntax_bad or lint_bad or secrets_bad) else 0
+          + (f", {secrets_bad} leaked secrets" if secrets_bad else "")
+          + (f", {clash_bad} name clashes" if clash_bad else ""))
+    return 1 if (failed or syntax_bad or lint_bad or secrets_bad or clash_bad) else 0
 
 
 if __name__ == "__main__":

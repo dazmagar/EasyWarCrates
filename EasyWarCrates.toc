@@ -27,6 +27,7 @@ Data/Zones.lua
 Data/DropPoints.lua
 Data/Vignettes.lua
 Data/Announcers.lua
+Data/Locale.lua
 Core/Zones.lua
 Detect/Shard.lua
 Detect/Heading.lua
