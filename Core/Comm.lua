@@ -211,6 +211,55 @@ local function take(report, channel)
     return verdict
 end
 
+-- Who in the group is running this.
+--
+-- Answering is not gated on sharing being on: a member with the addon and
+-- sharing switched off is exactly what this exists to find, and holding their
+-- answer back would file them with the people who do not have it at all. It is
+-- gated on the addon being switched on, because a client that is off does not
+-- run this handler -- so no answer means "not installed, or switched off", and
+-- the report says so rather than guessing which.
+local CHECK_STAGGER = 2
+local CHECK_WINDOW = 4
+Comm.CHECK_WINDOW = CHECK_WINDOW
+Comm.checkHeard = {}
+
+local function answerCheck(channel)
+    -- Staggered. Forty clients answering in the same instant is forty messages
+    -- in one tick, and the game's answer to that is to drop them.
+    C_Timer.After(math.random() * CHECK_STAGGER, function()
+        pcall(C_ChatInfo.SendAddonMessage, OURS,
+            ns.Remote.EncodeCheck(ns.Version(), ns.db and ns.db.share and true or false),
+            channel)
+    end)
+end
+
+-- Returns "alone", or "sent" and the roster the answers will be matched against.
+function Comm.AskCheck()
+    if not IsInGroup() then return "alone" end
+    Comm.checkHeard = {}
+    pcall(C_ChatInfo.SendAddonMessage, OURS, ns.Remote.EncodeCheck(),
+        IsInRaid() and "RAID" or "PARTY")
+    return "sent"
+end
+
+function Comm.Roster()
+    local names = {}
+    if IsInRaid() then
+        for i = 1, GetNumGroupMembers() do
+            local name = GetRaidRosterInfo(i)
+            if name then names[#names + 1] = name end
+        end
+    elseif IsInGroup() then
+        names[#names + 1] = UnitName("player")
+        for i = 1, GetNumSubgroupMembers() do
+            local name = UnitName("party" .. i)
+            if name then names[#names + 1] = name end
+        end
+    end
+    return names
+end
+
 -- Half-received messages, by sender. AceComm splits anything over a packet,
 -- and RCT's bulk sync is three or four pieces.
 local partial = {}
@@ -227,6 +276,21 @@ function Comm.OnAddonMessage(prefix, text, channel, sender)
     if isSelf(sender) then return end
     if channel ~= "GUILD" and not inGroupNow(sender) then return end
     if not rateOK(sender) then return end
+
+    -- Who is running this, taken before anything tries to read a crate out of
+    -- it. Neither of these is a sighting and neither belongs in the log of
+    -- what was heard: one is a question and the other is an answer to it.
+    if prefix == OURS then
+        local kind, version, sharing = ns.Remote.DecodeCheck(text)
+        if kind == "query" then
+            answerCheck(channel)
+            return
+        end
+        if kind == "reply" then
+            Comm.checkHeard[sender] = { version = version, sharing = sharing }
+            return
+        end
+    end
 
     -- Put a split message back together before anything is asked to read it.
     -- A piece on its own is not a refusal, it is a wait.

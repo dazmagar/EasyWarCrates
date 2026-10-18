@@ -603,6 +603,105 @@ function Remote.FromPin(text, sender, now)
     }
 end
 
+-- Asking the group who is running this addon, and on which build.
+--
+-- Worth having because the addon is silent until somebody sees a crate: a
+-- leader looking at an empty window cannot tell "nobody is reporting" from
+-- "nobody here has it". RCT ships the same tool.
+--
+-- A kind of message older clients cannot mistake for a sighting. Their first
+-- field is the wire version as a number and this one is a letter, so a 0.2.0
+-- client decodes nothing and logs a line it could not read, which is the right
+-- outcome and not an error.
+--
+--   V~?                  who is there
+--   V~!~<version>~<1|0>  here, on this build, sharing or not
+local CHECK = "V"
+
+function Remote.EncodeCheck(version, sharing)
+    if not version then return CHECK .. "~?" end
+    return ("%s~!~%s~%d"):format(CHECK, version, sharing and 1 or 0)
+end
+
+-- Their version is a string from the wire and it gets printed in this client's
+-- chat frame with this addon's name beside it. Anything that can colour text,
+-- open a link, or run to eighty characters is not a version.
+local function scrub(version)
+    if type(version) ~= "string" then return "?" end
+    local clean = version:gsub("[^%w%.%-]", ""):sub(1, 16)
+    return clean ~= "" and clean or "?"
+end
+
+-- Returns "query", or "reply" with the version and whether they are sharing.
+function Remote.DecodeCheck(text)
+    if type(text) ~= "string" then return nil end
+    local rest = text:match("^" .. CHECK .. "~(.*)$")
+    if not rest then return nil end
+    if rest == "?" then return "query" end
+    local mark, version, sharing = rest:match("^(!)~?([^~]*)~?(%d?)$")
+    if not mark then return nil end
+    return "reply", scrub(version), sharing == "1"
+end
+
+-- Which of two version strings is older, by the numbers in them. "0.10.0" is
+-- newer than "0.2.0", which a string comparison gets backwards.
+local function olderThan(a, b)
+    local an, bn = {}, {}
+    for n in tostring(a):gmatch("%d+") do an[#an + 1] = tonumber(n) end
+    for n in tostring(b):gmatch("%d+") do bn[#bn + 1] = tonumber(n) end
+    for i = 1, math.max(#an, #bn) do
+        local x, y = an[i] or 0, bn[i] or 0
+        if x ~= y then return x < y end
+    end
+    return false
+end
+
+local function bareName(name)
+    return tostring(name or ""):match("^([^-]+)") or name
+end
+
+-- Ordered by what the asker has to do about it. The reader's own row leads,
+-- then whoever may not have the addon at all, then whoever is on an older
+-- build, then everyone needing nothing.
+local STATE_ORDER = { you = 1, silent = 2, behind = 3, ok = 4 }
+
+function Remote.RollCall(names, said, mine, me)
+    said = said or {}
+    local byBare = {}
+    for name, reply in pairs(said) do byBare[bareName(name)] = reply end
+
+    local roll = {}
+    for _, name in ipairs(names or {}) do
+        local reply = said[name] or byBare[bareName(name)]
+        local state
+        if me and bareName(name) == bareName(me) then
+            state = "you"
+        elseif not reply then
+            state = "silent"
+        elseif mine and olderThan(reply.version, mine) then
+            state = "behind"
+        else
+            state = "ok"
+        end
+        -- Spelled out rather than folded into "reply and reply.sharing or
+        -- nil", which turns a false into a nil: somebody who has the addon
+        -- with sharing switched off would read as somebody who never answered.
+        local entry = { name = name, state = state }
+        if reply then
+            entry.version = reply.version
+            entry.sharing = reply.sharing and true or false
+        end
+        roll[#roll + 1] = entry
+    end
+
+    table.sort(roll, function(a, b)
+        local x, y = STATE_ORDER[a.state] or 9, STATE_ORDER[b.state] or 9
+        if x ~= y then return x < y end
+        return a.name < b.name
+    end)
+    return roll
+end
+
 -- HGLog, the log RCT bundles, which shares in the clear on HGLOG1:
 --
 --   <ver>|<type>|<chunk>|<rows>      rows: zoneID,ts,shardID;zoneID,ts,shardID

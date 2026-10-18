@@ -762,6 +762,7 @@ t.test("a zone this addon does not track is refused by Note", function()
     t.eq(r.zoneID, 84)
     t.eq(Remote.Note(Remote.New(), r, T0), "invalid", "Stormwind is not a crate zone")
 end)
+
 -- RCT's two lines with a map pin in them, which it posts to the raid while the
 -- transport is still flying and again when the crate is out of it:
 --
@@ -858,6 +859,95 @@ t.test("a shardless report never answers which shard the zone is in", function()
     -- And a real shard still answers, with the unreadable one alongside it.
     Remote.Note(store, { zoneID = ZA, shardID = 44, stage = "here", at = T0, from = "Scout" }, T0)
     t.eq(Remote.ShardFor(store, ZA, T0), 44)
+end)
+
+-- Asking the group who is running this addon. RCT has the same tool and it is
+-- the one thing a leader cannot work out by watching: the addon is silent
+-- until somebody sees a crate, so "nobody is reporting" and "nobody has it"
+-- look identical until you ask.
+--
+-- A kind of message no older client reads as a sighting: its first field is a
+-- letter where the sighting format has the wire version, so 0.2.0 clients
+-- decode nothing and log a line they cannot read, which is exactly right.
+t.test("a version query is not a sighting", function()
+    local q = Remote.EncodeCheck()
+    t.eq(Remote.Decode("EWC1", q, "Rdy"), nil, "not a crate")
+    t.eq(Remote.DecodeCheck(q), "query")
+end)
+
+t.test("a reply carries the version and whether they are sharing", function()
+    local r = Remote.EncodeCheck("0.2.0", true)
+    local kind, version, sharing = Remote.DecodeCheck(r)
+    t.eq(kind, "reply")
+    t.eq(version, "0.2.0")
+    t.eq(sharing, true)
+    t.eq(Remote.Decode("EWC1", r, "Rdy"), nil, "still not a crate")
+end)
+
+t.test("sharing switched off comes across as off, not as missing", function()
+    local kind, version, sharing = Remote.DecodeCheck(Remote.EncodeCheck("0.2.0", false))
+    t.eq(kind, "reply")
+    t.eq(version, "0.2.0")
+    t.eq(sharing, false)
+end)
+
+-- The version is somebody else's string and it gets printed in this client's
+-- chat frame. Anything that can colour text, open a link or run to a hundred
+-- characters does not belong in a line this addon prints with its own name on
+-- it.
+t.test("a version is scrubbed before it can be printed", function()
+    local _, version = Remote.DecodeCheck("V~!~|cffff0000|Hitem:1234|hclick me|h|r~1")
+    t.notOk(tostring(version):find("|"), "no escapes: " .. tostring(version))
+    local _, long = Remote.DecodeCheck("V~!~" .. string.rep("9", 80) .. "~1")
+    t.ok(#long <= 16, "no essays: " .. tostring(#long))
+end)
+
+t.test("a reply with no version at all is still a yes", function()
+    local kind, version = Remote.DecodeCheck("V~!")
+    t.eq(kind, "reply")
+    t.eq(version, "?", "they have it; which build is a separate question")
+end)
+
+t.test("anything else is not a check", function()
+    t.eq(Remote.DecodeCheck("1~falling~2437~44~1000"), nil)
+    t.eq(Remote.DecodeCheck("TOKEN~abc"), nil)
+    t.eq(Remote.DecodeCheck(""), nil)
+    t.eq(Remote.DecodeCheck(nil), nil)
+end)
+
+-- Who did not answer is the half of the answer the roster has to supply, and
+-- the two halves meet here rather than in the command, so this is testable.
+--
+-- Ordered by what the asker has to do about it: the ones who may not have the
+-- addon at all, then the ones on an older build, then the ones needing
+-- nothing. The reader's own row leads, because a list of twenty names with
+-- yours buried in it reads as a list about other people.
+t.test("the roll call names who answered and who did not", function()
+    local said = { ["Rdy-Whisperwind"] = { version = "0.2.0", sharing = true },
+                   ["Scout"] = { version = "0.1.0", sharing = false } }
+    local roll = Remote.RollCall({ "Dmitrii", "Rdy-Whisperwind", "Scout", "Silent" },
+        said, "0.2.0", "Dmitrii")
+    t.eq(#roll, 4)
+    t.eq(roll[1].name, "Dmitrii")
+    t.eq(roll[1].state, "you")
+    t.eq(roll[2].state, "silent", "Silent, who may not have it at all")
+    t.eq(roll[3].state, "behind", "Scout, on 0.1.0 against 0.2.0")
+    t.eq(roll[3].sharing, false, "and not sharing either")
+    t.eq(roll[4].state, "ok", "Rdy, who needs nothing")
+end)
+
+t.test("a member on a newer build than yours is not behind", function()
+    local roll = Remote.RollCall({ "Ahead" },
+        { ["Ahead"] = { version = "0.3.0", sharing = true } }, "0.2.0", "Me")
+    t.eq(roll[1].state, "ok")
+end)
+
+-- Names arrive with a realm attached from some places and without it from
+-- others, and the two must not come out as two people.
+t.test("a reply from a realm-qualified name matches the bare roster name", function()
+    local roll = Remote.RollCall({ "Scout" },
+        { ["Scout-Blackhand"] = { version = "0.2.0", sharing = true } }, "0.2.0", "Me")
+    t.eq(roll[1].state, "ok")
 end)
 
 -- One crate, three of their lines.

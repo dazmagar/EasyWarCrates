@@ -1105,6 +1105,41 @@ HANDLERS.import = function(rest)
         end })
 end
 
+-- Who in the group is running this addon, which is the one thing a leader
+-- cannot work out by looking: it says nothing until somebody sees a crate, so
+-- an empty window means either nobody is reporting or nobody has it.
+HANDLERS.check = function()
+    if ns.Comm.AskCheck() == "alone" then
+        return ns.Print("|cff777777you are not in a group, so there is nobody to ask.|r")
+    end
+    ns.Print(("asking the group... |cff777777(answers come in over %d seconds)|r"):format(
+        ns.Comm.CHECK_WINDOW))
+
+    C_Timer.After(ns.Comm.CHECK_WINDOW, function()
+        local roll = ns.Remote.RollCall(ns.Comm.Roster(), ns.Comm.checkHeard,
+            ns.Version(), UnitName("player"))
+        local have = 0
+        for _, r in ipairs(roll) do
+            if r.state ~= "silent" then have = have + 1 end
+        end
+        ns.Print(("%d of %d in the group answered"):format(have, #roll))
+        for _, r in ipairs(roll) do
+            local name = r.state == "you" and "|cffffd100you|r" or r.name
+            if r.state == "silent" then
+                -- Not "does not have it". A client with the addon switched off
+                -- does not answer either, and the two cannot be told apart
+                -- from here, so the line says what was observed.
+                ns.Print(("  |cffff5555%s|r |cff777777no answer: not installed, or"
+                    .. " switched off|r"):format(name))
+            else
+                ns.Print(("  %s |cff777777%s%s|r"):format(name, r.version or "?",
+                    r.state == "behind" and ", older than yours"
+                        or (r.sharing == false and ", sharing off -- hears you, says nothing" or "")))
+            end
+        end
+    end)
+end
+
 HANDLERS.help = function()
     ns.Print("commands:")
     ns.Print("  /ewc window   -- show or hide the tracker window")
@@ -1112,6 +1147,7 @@ HANDLERS.help = function()
     ns.Print("  /ewc data     -- timers, measurements and the route, with a way to remove any")
     ns.Print("  /ewc export   -- your parachute times and drop points as a string to hand over")
     ns.Print("  /ewc import   -- take somebody else's string, with a box to paste it into")
+    ns.Print("  /ewc check    -- who in your group is running this, and on which version")
     ns.Print("  /ewc pin      -- test placing a map pin where you stand")
     ns.Print("  /ewc status   -- what zone the addon thinks you are in")
     ns.Print("  /ewc map      -- the map chain above you, and what it resolves to")
