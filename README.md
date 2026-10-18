@@ -79,6 +79,8 @@ corrected from a command line does not get corrected.
 | `/ewc interval` | measured gaps between drops |
 | `/ewc phase` | which shards it can still answer for, and how far through each cycle is |
 | `/ewc comm` | what other players and their addons are broadcasting |
+| `/ewc export` | your parachute times and drop points as a string to hand to someone |
+| `/ewc import` | take somebody else's string, with a box to paste it into |
 | `/ewc yells` | what the crate announcer said, and whether it counted |
 | `/ewc scan` | every vignette in range, raw. Use this first after a patch |
 | `/ewc shard` | cross-check the shard against a creature's GUID |

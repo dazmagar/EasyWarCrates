@@ -55,6 +55,13 @@ ns.Airtime = Airtime
 local DESCENT_MIN, DESCENT_MAX = 5, 240
 Airtime.DESCENT_MIN, Airtime.DESCENT_MAX = DESCENT_MIN, DESCENT_MAX
 
+-- Readings kept per zone, in each of the three stores here, oldest dropped to
+-- make room. Exported because Track/Share.lua has to know what is free before
+-- it writes anything: an import that filled a zone already full would pay for
+-- itself with readings the player watched for themselves.
+local MAX_READINGS = 40
+Airtime.MAX_READINGS = MAX_READINGS
+
 -- Used before a zone has been measured, so the readout can show a number with
 -- a caveat rather than nothing at all. Midway through the observed range.
 local DESCENT_GUESS = 100
@@ -122,8 +129,12 @@ function Airtime.NoteDescent(store, zoneID, seconds, info)
         dist = info.dist and math.floor(info.dist * 10 + 0.5) / 10 or nil,
         x = pos and math.floor(pos.x * 1000 + 0.5) / 10 or nil,
         y = pos and math.floor(pos.y * 1000 + 0.5) / 10 or nil,
+        -- Whose reading it is, when it is not this client's. A figure out of
+        -- somebody's import string and one the player timed for themselves are
+        -- not the same evidence, and /ewc airtime has to be able to say which.
+        via = info.via or nil,
     }
-    while #list > 40 do table.remove(list, 1) end
+    while #list > MAX_READINGS do table.remove(list, 1) end
     return list[#list]
 end
 
@@ -344,7 +355,7 @@ function Airtime.NoteFlight(store, zoneID, seconds, partial)
     local list = store[zoneID]
     if type(list) ~= "table" then list = {}; store[zoneID] = list end
     list[#list + 1] = { secs = seconds, partial = partial or nil }
-    while #list > 40 do table.remove(list, 1) end
+    while #list > MAX_READINGS do table.remove(list, 1) end
     return list[#list]
 end
 
@@ -388,7 +399,7 @@ function Airtime.NoteLinger(store, zoneID, seconds, partial)
     local list = store[zoneID]
     if type(list) ~= "table" then list = {}; store[zoneID] = list end
     list[#list + 1] = { secs = seconds, partial = partial or nil }
-    while #list > 40 do table.remove(list, 1) end
+    while #list > MAX_READINGS do table.remove(list, 1) end
     return list[#list]
 end
 

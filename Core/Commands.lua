@@ -1011,11 +1011,107 @@ HANDLERS.wipe = function()
     ns.Print("timers and tracks cleared.")
 end
 
+-- Handing the measurements to somebody else, and taking theirs.
+--
+-- A single-line edit box in a popup, because WoW's chat frame cannot be
+-- selected from: a string printed there can be read and not copied, which for
+-- a 1500-character string is the same as not having it. Everything about the
+-- box is set explicitly -- the length cap above all, which defaults low enough
+-- to cut a real export in half and would do it without a word.
+local SHARE_POPUP = "EASYWARCRATES_SHARE"
+
+local function shareBox(dialog)
+    return dialog and (dialog.editBox
+        or (dialog.GetName and dialog:GetName() and _G[dialog:GetName() .. "EditBox"]))
+end
+
+StaticPopupDialogs[SHARE_POPUP] = {
+    text = "%s",
+    button1 = OKAY,
+    button2 = CANCEL,
+    hasEditBox = true,
+    editBoxWidth = 350,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    OnShow = function(self, data)
+        local box = shareBox(self)
+        if not box then
+            return ns.Print("|cffff8800this build of the game would not give us a text box|r")
+        end
+        pcall(function()
+            box:SetMaxLetters(0)
+            box:SetMaxBytes(0)
+            box:SetAutoFocus(true)
+            box:SetText((data and data.text) or "")
+            if data and data.text then box:HighlightText() end
+            box:SetFocus()
+        end)
+    end,
+    EditBoxOnEnterPressed = function(self)
+        local dialog = self:GetParent()
+        local data = dialog and dialog.data
+        if data and data.onAccept then data.onAccept(self:GetText()) end
+        dialog:Hide()
+    end,
+    OnAccept = function(self, data)
+        local box = shareBox(self)
+        if data and data.onAccept then data.onAccept(box and box:GetText() or "") end
+    end,
+}
+
+HANDLERS.export = function()
+    local text = ns.Share.Export(ns.db)
+    local readings = select(2, text:gsub("~d:", ""))
+    local points = select(2, text:gsub("~l:", ""))
+    ns.Print(("%d parachute time%s and %d drop point%s of your own, ready to copy."):format(
+        readings, readings == 1 and "" or "s", points, points == 1 and "" or "s"))
+    -- Said because the omissions are deliberate and a player comparing this
+    -- with what the data panel shows would otherwise think it lost something.
+    ns.Print("|cff777777timers, shards and cycle gaps are left out: they belong to one copy"
+        .. " of one zone at one moment, so they are no use on anybody else's screen.|r")
+    StaticPopup_Show(SHARE_POPUP, "Ctrl+C to copy. This is yours to give away.",
+        nil, { text = text })
+end
+
+local function report(ok, got)
+    if not ok then
+        return ns.Print(("|cffff8800nothing imported:|r %s"):format(tostring(got)))
+    end
+    ns.Print(("imported %d parachute time%s and %d drop point%s."):format(
+        got.descent, got.descent == 1 and "" or "s",
+        got.points, got.points == 1 and "" or "s"))
+    if got.known > 0 then
+        ns.Print(("  |cff777777%d point%s already known|r"):format(
+            got.known, got.known == 1 and " was" or "s were"))
+    end
+    -- The one outcome worth explaining rather than counting: it means their
+    -- readings were dropped to keep this client's own.
+    if got.full > 0 then
+        ns.Print(("  |cff777777%d reading%s nowhere to go: those zones hold %d each and"
+            .. " yours are not thrown out to make room|r"):format(
+            got.full, got.full == 1 and " had" or "s had", ns.Airtime.MAX_READINGS))
+    end
+    if ns.RefreshWindow then ns.RefreshWindow() end
+end
+
+HANDLERS.import = function(rest)
+    if rest and rest ~= "" then
+        return report(ns.Share.Import(ns.db, rest, "import"))
+    end
+    StaticPopup_Show(SHARE_POPUP, "Paste their string here, then Enter.", nil,
+        { onAccept = function(text)
+            report(ns.Share.Import(ns.db, (text or ""):gsub("%s", ""), "import"))
+        end })
+end
+
 HANDLERS.help = function()
     ns.Print("commands:")
     ns.Print("  /ewc window   -- show or hide the tracker window")
     ns.Print("  /ewc config   -- open the settings panel")
     ns.Print("  /ewc data     -- timers, measurements and the route, with a way to remove any")
+    ns.Print("  /ewc export   -- your parachute times and drop points as a string to hand over")
+    ns.Print("  /ewc import   -- take somebody else's string, with a box to paste it into")
     ns.Print("  /ewc pin      -- test placing a map pin where you stand")
     ns.Print("  /ewc status   -- what zone the addon thinks you are in")
     ns.Print("  /ewc map      -- the map chain above you, and what it resolves to")
