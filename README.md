@@ -31,12 +31,27 @@ a zone hands you a copy you did not choose. The crate is still there, its cycle
 is simply at another point. A row whose timer came from another shard is marked
 and explained.
 
-**Listens to other players, including ones running other addons.** RCT
-announces flying crates to raid chat in plain text and WarCrateTracker
-broadcasts its sightings in the clear, so both are read with nothing installed
-and nothing decoded. What other people report is held for the session only,
-carries who said it, and is never written to disk. It is promoted into your own
-timers at one moment: when you confirm the crate yourself.
+**Shares in both directions, and reads the addons your raid already runs.** A
+transport goes out the moment one is seen, the predicted landing spot follows
+on its own message as soon as the call is firm, and a crate under its parachute
+carries the seconds left on it -- only the client watching a crate can reckon
+those. Nothing is sent that this client did not see itself, and a report heard
+from somebody else is never relayed, so one wrong call cannot come back as
+corroboration.
+
+The other way: RCT announces flying crates to raid chat in plain text,
+WarCrateTracker and CrateTrackerZK broadcast their sightings in the clear, so
+all three are read with nothing installed and nothing decoded. A zone gets a
+row because somebody else can see something in it -- no timer of your own
+needed, and whether or not it is on your route. What other people report is
+held for the session only, carries who said it and how it arrived, and is never
+written to disk. It is promoted into your own timers at one moment: when you
+confirm the crate yourself.
+
+Zone names arrive in the reporter's language: German, French, Spanish and
+Russian spellings resolve, as does the typographic apostrophe one client writes
+into `Zul'Aman`. A name it still cannot place is counted as unknown instead of
+being dropped in silence.
 
 **Anchors on the NPC who announces the cycle.** Vidious, Ziadan and Ruffious
 announce a crate as it spawns. That is earlier than the transport becomes
@@ -62,6 +77,7 @@ corrected from a command line does not get corrected.
 | `/ewc timers` | every timer held |
 | `/ewc airtime` | measured parachute times |
 | `/ewc interval` | measured gaps between drops |
+| `/ewc phase` | which shards it can still answer for, and how far through each cycle is |
 | `/ewc comm` | what other players and their addons are broadcasting |
 | `/ewc yells` | what the crate announcer said, and whether it counted |
 | `/ewc scan` | every vignette in range, raw. Use this first after a patch |
@@ -78,9 +94,9 @@ a crate picks moves the number as much as which zone does. It was advice
 wearing a number. You get when the transport arrives and when the crate is
 lootable; the flying is yours.
 
-**It does not keep other people's data.** No library is bundled, nothing is
-synced to disk from strangers, and an evening's farming does not leave a wall
-of rows for shards nobody will stand in again.
+**It does not keep other people's data.** Nothing from a stranger reaches the
+disk, what they report lasts the session, and an evening's farming does not
+leave a wall of rows for shards nobody will stand in again.
 
 **It does not present a guess as a measurement.** A timer seeded from a crate
 found already on the ground is marked. A descent borrowed from other zones is
@@ -93,7 +109,7 @@ says so and names what else is still in the running.
 .venv/Scripts/python.exe tests/run.py
 ```
 
-264 specs, a syntax pass and a linter, run under a real Lua interpreter. Every
+380 specs, a syntax pass and a linter, run under a real Lua interpreter. Every
 module that can be tested outside the game is: the heading fit, the prediction,
 the timers, the measurements, the wire protocol and everything the window
 draws. The files that create frames are kept as thin as they can be, because
@@ -121,6 +137,11 @@ CrateTrackerZK. Russian announcer phrasings come from CrateTrackerZK's locale.
 Zone abbreviations follow WarCrateTracker (MIT, Copyright 2024 Samuel Colburn),
 except that Eversong and Harandar are ES and HA here, because that is what
 raids call out.
+
+The minimap button is drawn by LibDBIcon-1.0, on LibDataBroker-1.1,
+CallbackHandler-1.0 and LibStub. Those four are bundled unmodified under
+`Libs/`, whose own README records the version of each, where it was taken from,
+and which of them is still missing its licence text.
 
 ## License
 
