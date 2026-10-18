@@ -113,7 +113,7 @@ says so and names what else is still in the running.
 .venv/Scripts/python.exe tests/run.py
 ```
 
-380 specs, a syntax pass and a linter, run under a real Lua interpreter. Every
+445 specs, a syntax pass and a linter, run under a real Lua interpreter. Every
 module that can be tested outside the game is: the heading fit, the prediction,
 the timers, the measurements, the wire protocol and everything the window
 draws. The files that create frames are kept as thin as they can be, because

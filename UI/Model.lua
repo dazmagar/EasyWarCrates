@@ -173,8 +173,11 @@ end
 --   shardFrom   who said which copy it is: "you", or a raid member's name
 --   inRoute     whether this zone is part of the rotation
 --   live        a crate down or falling in that zone now: { phase, toGround }
+--
+-- hereZone is the zone the player is standing in, which always takes a row:
+-- the shard is on it, and that is the one line a farmer is certain to want.
 --   next        the one row worth acting on
-function Model.BuildRows(db, route, now)
+function Model.BuildRows(db, route, now, hereZone)
     if ns.Remote and ns.Remote.Settle then
         -- Settle first, then expire: a landed crate becomes an anchor and
         -- lives on, and only what nothing can read any more is dropped.
@@ -289,6 +292,19 @@ function Model.BuildRows(db, route, now)
     end)
     for _, o in ipairs(others) do
         add(o.zoneID, o.entry, o.shardID, nil, o.known, o.from)
+    end
+
+    -- The zone the player is standing in. Every source above it is something
+    -- that happened -- a timer, a crate, somebody else's word -- and Prune
+    -- clears a stale timer at login, so after an evening away the one zone the
+    -- player is certainly interested in had nothing to put it on the list.
+    -- Dmitrii's, 18 Oct: stood in Zul'Aman, no Zul'Aman row, no shard on
+    -- screen. The shard was known the whole time -- any vignette in the zone
+    -- gives it -- and there was nowhere to show it.
+    if hereZone and ns.ZONES[hereZone] and not seen[hereZone] then
+        local here, from = shardHere(hereZone, now)
+        local entry, shardID, known = ns.Route.EntryFor(db, hereZone, here)
+        add(hereZone, entry, shardID, nil, known, from)
     end
 
     -- A zone with something happening but no timer would otherwise have no row

@@ -900,3 +900,32 @@ t.test("a call with no fit and no circling still shows no time", function()
     t.eq(live.toGround, nil, "an unknown distance is not a countdown")
     ns.db = nil
 end)
+
+-- Dmitrii's, 18 Oct: stood in Zul'Aman with no Zul'Aman row in the window at
+-- all, and no shard on it.
+--
+-- Every source of a row was something that had happened -- a timer, a crate in
+-- the air, somebody else's word -- and Prune clears a stale timer at login, so
+-- after an evening away the zone the player is standing in had nothing to put
+-- it on the list. The shard was known all along: any vignette in the zone
+-- gives it. There was nowhere to show it.
+t.test("the zone the player is standing in always has a row", function()
+    local prev = ns.Scanner
+    ns.Scanner = { CurrentShard = function(z) return z == ZA and 44 or nil end }
+    local rows = Model.BuildRows(Timers.New(), nil, T0, ZA)
+    ns.Scanner = prev
+    t.eq(#rows, 1)
+    t.eq(rows[1].zoneID, ZA)
+    t.eq(rows[1].shardID, 44, "which copy of it is the other half of the question")
+    t.eq(rows[1].remaining, nil, "and nothing is known about its cycle yet")
+end)
+
+t.test("standing in a zone that already has a row does not make a second", function()
+    local rows = Model.BuildRows(db({ ZA, 1, T0 - 100 }), nil, T0, ZA)
+    t.eq(#rows, 1)
+end)
+
+t.test("a player outside every crate zone adds no row", function()
+    t.eq(#Model.BuildRows(Timers.New(), nil, T0, nil), 0)
+    t.eq(#Model.BuildRows(Timers.New(), nil, T0, 84), 0, "84 is Stormwind")
+end)

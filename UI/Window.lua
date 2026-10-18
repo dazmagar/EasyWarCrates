@@ -265,14 +265,15 @@ end
 local function refresh()
     if not frame or not frame:IsShown() then return end
     local now = GetServerTime()
-    local list, nextRow = ns.Model.BuildRows(ns.db.crates, ns.db.route, now)
+    local hereZone = ns.Zones.Normalize(C_Map.GetBestMapForUnit("player"))
+    local list, nextRow = ns.Model.BuildRows(ns.db.crates, ns.db.route, now, hereZone)
 
     -- Shown only when there is something to say. It used to read "no
     -- transport in the air" the rest of the time, which is the normal state
     -- and tells nobody anything -- and the rows carry the same news now, with
     -- the zone attached. What this still adds is the coordinates and how sure
     -- the call is, so it stays for that and gets out of the way otherwise.
-    local head = ns.Model.Headline(ns.Zones.Normalize(C_Map.GetBestMapForUnit("player")), now)
+    local head = ns.Model.Headline(hereZone, now)
     if head then
         frame.head:SetText(((head.ready and "|cffffd100" or "|cff777777") .. head.text .. "|r"))
         frame.head:Show()
