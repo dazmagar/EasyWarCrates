@@ -536,3 +536,112 @@ t.test("nothing to measure from is not a reading", function()
         { [ZONE] = { claimedAt = 1000, seen = 1042 } }), 0)
     t.eq(next(store), nil)
 end)
+
+-- The drop point decides the descent.
+--
+-- Zul'Aman's real readings, grouped by where the crate landed. The zone median
+-- over all of them is 92, and on 46.9, 62.2 a crate takes 129 seconds -- so a
+-- per-zone figure ends the countdown 37 seconds before it lands.
+local ZA_SPOTS = {
+    { x = 39.8, y = 27.5, secs = { 91, 92, 92, 93, 93, 94 } },
+    { x = 32.7, y = 77.4, secs = { 82, 82, 83, 83 } },
+    { x = 46.9, y = 62.2, secs = { 129, 129, 129 } },
+    { x = 36.9, y = 67.9, secs = { 65, 65 } },
+}
+
+local function zulaman()
+    local store = {}
+    for _, s in ipairs(ZA_SPOTS) do
+        for _, secs in ipairs(s.secs) do
+            Airtime.NoteDescent(store, ZONE, secs, { pos = { x = s.x / 100, y = s.y / 100 } })
+        end
+    end
+    return store
+end
+
+t.test("a descent is read at the drop point, not averaged over the zone", function()
+    local store = zulaman()
+    local zone = Airtime.Descent(store, ZONE)
+    t.ok(zone >= 82 and zone <= 94, "the zone figure is the middle of a wide pile")
+
+    for _, s in ipairs(ZA_SPOTS) do
+        local secs, n, _, _, _, _, source = Airtime.Descent(store, ZONE,
+            { x = s.x / 100, y = s.y / 100 })
+        t.eq(source, "spot", ("%.1f, %.1f answers from its own readings"):format(s.x, s.y))
+        t.eq(n, #s.secs)
+        t.near(secs, ns.MedianOf(s.secs, 1, #s.secs), 1e-6,
+            ("%.1f, %.1f reads its own fall"):format(s.x, s.y))
+    end
+end)
+
+t.test("a spot the crate is not going to does not answer for it", function()
+    local store = zulaman()
+    -- Beyond the merge radius of every reading, so there is nothing to say
+    -- about it and the zone has to answer.
+    local _, _, _, _, _, _, source = Airtime.Descent(store, ZONE, { x = 0.10, y = 0.10 })
+    t.eq(source, "zone", "an unmeasured spot borrows, it does not invent")
+end)
+
+t.test("one reading at a spot is not enough to overrule the zone", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 44, { pos = { x = 0.381, y = 0.569 } })
+    Airtime.NoteDescent(store, ZONE, 44, { pos = { x = 0.381, y = 0.569 } })
+    Airtime.NoteDescent(store, ZONE, 102, { pos = { x = 0.539, y = 0.654 } })
+
+    -- Whatever the zone ladder then answers -- its own readings, pooled, or
+    -- the shipped guess -- is not this one reading, which cannot be told apart
+    -- from a corrupt one.
+    local _, _, _, _, _, _, lone = Airtime.Descent(store, ZONE, { x = 0.539, y = 0.654 })
+    t.notOk(lone == "spot", "a single reading cannot be told from a bad one")
+    local pair, _, _, _, _, _, source = Airtime.Descent(store, ZONE, { x = 0.381, y = 0.569 })
+    t.eq(source, "spot")
+    t.near(pair, 44, 1e-6, "two that agree is two observations of the one fall")
+end)
+
+-- The one corrupt reading in the real store: 8 seconds where the same spot's
+-- other reading says 45. Averaging the pair would report 26 and send a raid
+-- off nineteen seconds early.
+t.test("readings at one spot that disagree leave the spot silent", function()
+    local store = {}
+    Airtime.NoteDescent(store, ZONE, 8, { pos = { x = 0.601, y = 0.341 } })
+    Airtime.NoteDescent(store, ZONE, 45, { pos = { x = 0.602, y = 0.341 } })
+    for _, secs in ipairs({ 44, 44, 44 }) do
+        Airtime.NoteDescent(store, ZONE, secs, { pos = { x = 0.467, y = 0.737 } })
+    end
+
+    local secs, _, _, _, _, _, source = Airtime.Descent(store, ZONE, { x = 0.601, y = 0.341 })
+    t.eq(source, "zone", "8 and 45 are not two readings of one fall")
+    t.ok(secs > 8, "and the zone's own answer is not the bad reading")
+end)
+
+t.test("a mid-fall join is not placed at a spot", function()
+    local store = {}
+    -- Both at one spot, but only the complete one measures the whole fall.
+    Airtime.NoteDescent(store, ZONE, 129, { pos = { x = 0.469, y = 0.622 } })
+    Airtime.NoteDescent(store, ZONE, 129, { pos = { x = 0.469, y = 0.622 } })
+    Airtime.NoteDescent(store, ZONE, 40, { partial = true, pos = { x = 0.469, y = 0.622 } })
+
+    local secs, n = Airtime.Descent(store, ZONE, { x = 0.469, y = 0.622 })
+    t.eq(n, 2, "the partial is counted elsewhere, not here")
+    t.near(secs, 129, 1e-6)
+end)
+
+t.test("the spot a parachute is over is the spot its descent is read at", function()
+    local store = zulaman()
+    local eta = Airtime.ETA(store, ZONE, nil, { x = 0.469, y = 0.622 }, T0, T0 + 100)
+    t.eq(eta.descentSource, "spot")
+    t.near(eta.toGround, 29, 1e-6, "129 at that spot, 100 of them gone")
+    t.eq(eta.phase, "falling", "and it is still in the air, which the zone figure denied")
+end)
+
+t.test("the spot listing groups what the estimate reads", function()
+    local spots, unplaced = Airtime.DescentSpots(zulaman(), ZONE)
+    t.eq(#spots, #ZA_SPOTS)
+    t.eq(unplaced, 0)
+    t.near(spots[1].typical, 129, 1e-6, "longest fall first")
+    t.eq(spots[1].n, 3)
+    t.ok(spots[1].agrees)
+    for i = 2, #spots do
+        t.ok(spots[i - 1].typical >= spots[i].typical, "ordered by how long the fall is")
+    end
+end)

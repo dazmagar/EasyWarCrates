@@ -475,7 +475,7 @@ end
 -- then take to come down.
 function ns.OnHovering(zoneID, spot, dist)
     ns.lastPrediction[zoneID] = { x = spot.x, y = spot.y, at = GetServerTime() }
-    local descent, n = ns.Airtime.Descent(ns.db.descent, zoneID)
+    local descent, n = ns.Airtime.Descent(ns.db.descent, zoneID, spot)
     ns.Say(("|cffffd100circling|r |cffffd100%.1f, %.1f|r in %s -- dropping any moment,"
         .. " |cffffd100on the ground %ss later|r%s  |cff777777(%.1f%% off the spot)|r"):format(
         spot.x * 100, spot.y * 100, ns.GetZoneName(zoneID), math.floor(descent + 0.5),

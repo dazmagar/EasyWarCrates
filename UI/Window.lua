@@ -215,8 +215,14 @@ local function paintRow(r, row, isNext)
                 or "|cff33ff99ON THE GROUND|r"))
             r.bar:SetValue(1)
         elseif row.live.phase == "falling" then
+            -- Counting up once the descent estimate is spent, for the reason
+            -- the ground row counts up: an expired countdown reads as a
+            -- landing that already happened.
             r.right:SetText(said .. (row.live.toGround
                 and ("|cffffd100landing %s|r"):format(ns.FormatClock(row.live.toGround):gsub("^%s+", ""))
+                or row.live.fallingFor
+                and ("|cffffd100falling %s|r"):format(
+                    ns.FormatClock(row.live.fallingFor):gsub("^%s+", ""))
                 or "|cffffd100falling|r"))
             r.bar:SetValue(0.6)
         else

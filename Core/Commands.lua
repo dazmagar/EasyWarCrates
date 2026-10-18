@@ -292,33 +292,52 @@ HANDLERS.airtime = function(rest)
             math.floor(d.secs + 0.5), ns.GetZoneName(zoneID), #list))
     end
 
-    ns.Print("time under the parachute -- the middle reading, per zone:")
+    ns.Print("time under the parachute -- per drop point, where it is known:")
     local any = false
     for zoneID in pairs(ns.ZONES) do
         local mean, n, lo, hi, over, _, source = ns.Airtime.Descent(ns.db.descent, zoneID)
         if n > 0 then
             any = true
-            ns.Print(("  %-3s %3ds  |cff777777%s%d drop%s, range %d-%d%s|r"):format(
+            -- The zone figure is the fallback now, so it says so: it answers
+            -- for a spot with too few readings and for a crate whose spot is
+            -- not known yet.
+            ns.Print(("  %-3s |cff777777spot unknown: %ds from %s%d drop%s, range %d-%d|r"):format(
                 ns.GetZoneAbbr(zoneID), math.floor(mean + 0.5),
                 -- A figure this zone borrowed must not read like one it
                 -- measured. Eversong's own readings average out to 64s, which
                 -- is not a time any crate there has ever taken.
-                source == "pooled" and "its readings disagree, so this is every zone's " or "from ",
+                source == "pooled" and "every zone's -- its own disagree -- " or "",
                 n, n == 1 and "" or "s",
-                math.floor(lo + 0.5), math.floor(hi + 0.5),
-                ""))
-            for i, d in ipairs(ns.Airtime.DescentSamples(ns.db.descent, zoneID) or {}) do
-                -- The overlap flag is not shown: it fired on 19 readings out
-                -- of 19, so it separates nothing. The release lag might.
-                ns.Print(("   %2d. %3ds  %s%s%s%s%s"):format(i, math.floor(d.secs + 0.5),
-                    d.x and ("|cff777777at %.1f, %.1f|r"):format(d.x, d.y) or "|cff777777spot not recorded|r",
-                    -- The open question: does a fall watched from further away
-                    -- read short because its parachute is drawn late.
-                    d.dist and ("  |cffffd100%.1f%% away|r"):format(d.dist) or "",
-                    d.lag and ("  |cff777777%ds circling first|r"):format(d.lag) or "",
-                    d.flip and ("  |cff33ff99art changed at %ds|r"):format(d.flip) or "",
-                    d.partial and ("  |cffff8800not counted: %s|r"):format(
-                        d.why or "joined mid-fall") or ""))
+                math.floor(lo + 0.5), math.floor(hi + 0.5)))
+            -- By spot, not by reading. Forty numbered lines per zone answered
+            -- the question they were added for -- whether distance truncates a
+            -- reading -- and the answer turned out to be that the spot decides
+            -- the fall. What is worth reading now is each spot's own figure,
+            -- which is what the countdown actually uses.
+            local spots, unplaced = ns.Airtime.DescentSpots(ns.db.descent, zoneID)
+            for _, s in ipairs(spots) do
+                ns.Print(("      |cffffd100%3ds|r  %.1f, %.1f  |cff777777%d drop%s%s|r"):format(
+                    math.floor(s.typical + 0.5), s.x, s.y, s.n, s.n == 1 and "" or "s",
+                    s.n < ns.Airtime.SPOT_MIN and ", one is not enough -- the zone answers here"
+                    or not s.agrees and (", but they span %d-%ds, so the zone answers here")
+                        :format(s.lo, s.hi)
+                    or ""))
+            end
+            if unplaced > 0 then
+                ns.Print(("      |cff777777%d more not counted: joined mid-fall, or"
+                    .. " measured before the spot was recorded|r"):format(unplaced))
+            end
+            -- Numbered, because 'airtime drop ZONE N' needs the N. Verbose
+            -- only: forty lines a zone is what the per-spot view replaced.
+            if ns.db.verbose then
+                for i, d in ipairs(ns.Airtime.DescentSamples(ns.db.descent, zoneID) or {}) do
+                    ns.Print(("   %2d. %3ds  %s%s%s"):format(i, math.floor(d.secs + 0.5),
+                        d.x and ("|cff777777at %.1f, %.1f|r"):format(d.x, d.y)
+                        or "|cff777777spot not recorded|r",
+                        d.lag and ("  |cff777777%ds circling first|r"):format(d.lag) or "",
+                        d.partial and ("  |cffff8800not counted: %s|r"):format(
+                            d.why or "joined mid-fall") or ""))
+                end
             end
         else
             ns.Print(("  %-3s %3ds  |cff777777guess, nothing measured here|r"):format(
@@ -965,7 +984,8 @@ HANDLERS.help = function()
     ns.Print("  /ewc interval -- measured gaps; 'drop ZONE N', 'reset [ZONE]'")
     ns.Print("  /ewc phase    -- remembered cycle positions per shard; 'reset'")
     ns.Print("  /ewc offsets  -- whether the zones' cycles sit at a fixed offset")
-    ns.Print("  /ewc airtime  -- measured parachute times; 'drop ZONE N', 'reset [ZONE]'")
+    ns.Print("  /ewc airtime  -- parachute times per drop point; 'reset [ZONE]',"
+        .. " and 'drop ZONE N' for the numbers verbose lists")
     ns.Print("  /ewc shard    -- cross-check the shard number against a creature GUID")
     ns.Print("  /ewc watch    -- toggle the live readout while a transport is tracked")
     ns.Print("  /ewc waypoint -- toggle the map pin on a prediction")

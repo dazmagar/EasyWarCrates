@@ -8,11 +8,12 @@ local ADDON, ns = ...
 -- falls under a parachute.
 --
 -- The second cannot be computed -- nothing observable says how high the crate
--- was released -- so it is measured, per zone. Readings so far: 86, 86, 87 in
--- three zones, and 98 and 129 in Zul'Aman at the SAME drop point. Thirty-one
--- seconds apart at one spot means splitting by drop point, as RCT does, would
--- not fix it; either the descent really varies that much or the measurement
--- does.
+-- was released -- so it is measured. Per drop point, not per zone: this file
+-- long claimed Zul'Aman had produced 98 and 129 seconds at the SAME spot and
+-- concluded that splitting by drop point could not help. It had not. Once the
+-- readings carried a position, those two turned out to be 28% of the map
+-- apart, and every spot with more than one reading agrees to 3 seconds. The
+-- note above Airtime.Descent has the figures.
 --
 -- The first was built as arithmetic, on the reasoning that the heading fit
 -- already knows the transport's speed and the prediction already knows where
@@ -211,7 +212,62 @@ local function describe(store, zoneID, guess)
     return guess, 0, full[1], full[#full], over, part, "guess"
 end
 
-function Airtime.Descent(store, zoneID)
+-- The drop point decides the descent, and the zone figure averages that away.
+--
+-- 80 readings carrying the spot they came from settle a question this file
+-- used to answer the other way. Grouped by where the crate landed, every spot
+-- with more than one reading agrees to 3 seconds or better:
+--
+--   Zul'Aman   39.8, 27.5 -> 91 92 92 93 93 94     46.9, 62.2 -> 129 129 129
+--              32.7, 77.4 -> 82 82 83 83           36.9, 67.9 -> 65 65
+--   Voidstorm  38.1, 56.8 -> 43 43 44 44 45        53.9, 65.4 -> 102 102
+--
+-- So the spread the header above blames on the measurement is the real thing
+-- being measured, and one zone figure cannot carry it: Voidstorm's own median
+-- is 44, which is 58 seconds short of its 102 spot. That is a countdown that
+-- reaches zero with the crate still in the air.
+--
+-- Two readings that agree is the bar, not three. The zone estimator wants a
+-- cluster of three because its readings come from spots it cannot tell apart,
+-- so a pair there is a coincidence; here a pair is two observations of the one
+-- thing. Spots are far enough apart for the radius to be unambiguous -- the
+-- closest pair with different descents is 7% of the map -- and the one bad
+-- reading in the store (8s where the spot's other reading says 45) is rejected
+-- by the agreement test rather than averaged in.
+local SPOT_MIN = 2
+Airtime.SPOT_MIN = SPOT_MIN
+
+local function spotReadings(store, zoneID, spot)
+    local list = store and store[zoneID]
+    if type(list) ~= "table" or type(spot) ~= "table" then return nil end
+    if type(spot.x) ~= "number" or type(spot.y) ~= "number" then return nil end
+    local radius = ns.Learn and ns.Learn.MERGE_RADIUS or 0.02
+    local here = {}
+    for _, d in ipairs(list) do
+        -- x and y are stored in percent, to a tenth. Readings taken before the
+        -- spot was recorded have neither and cannot be placed.
+        if not d.partial and d.x and d.y then
+            local dx, dy = d.x / 100 - spot.x, d.y / 100 - spot.y
+            if math.sqrt(dx * dx + dy * dy) <= radius then here[#here + 1] = d.secs end
+        end
+    end
+    if #here < SPOT_MIN then return nil end
+    table.sort(here)
+    -- Readings from one spot that disagree by more than the window are not
+    -- describing one fall, so the spot has nothing to say and the zone answers.
+    if here[#here] - here[1] > CLUSTER_WINDOW then return nil end
+    return here
+end
+
+-- spot is optional: the drop point this crate is headed for, in 0..1
+-- fractions. Given one, readings from that spot answer when there are enough
+-- that agree, and source reads "spot".
+function Airtime.Descent(store, zoneID, spot)
+    local here = spotReadings(store, zoneID, spot)
+    if here then
+        local _, over, part = fullReadings(store, zoneID)
+        return median(here, 1, #here), #here, here[1], here[#here], over, part, "spot"
+    end
     return describe(store, zoneID, DESCENT_GUESS)
 end
 
@@ -219,6 +275,46 @@ end
 function Airtime.DescentSamples(store, zoneID)
     local list = store and store[zoneID]
     return (type(list) == "table" and not list.n) and list or nil
+end
+
+-- The readings grouped the way Descent reads them: one entry per drop point,
+-- longest fall first, plus how many could not be placed. What makes the
+-- estimate checkable in game -- a per-zone number cannot be argued with.
+--
+--   { x, y, typical, n, lo, hi, agrees }   x and y in percent, as stored
+--
+-- agrees is false when the spot's readings disagree by more than the window,
+-- which is the one case Descent ignores the spot for.
+function Airtime.DescentSpots(store, zoneID)
+    local list = store and store[zoneID]
+    if type(list) ~= "table" or list.n then return {}, 0 end
+    local radius = (ns.Learn and ns.Learn.MERGE_RADIUS or 0.02) * 100
+    local spots, unplaced = {}, 0
+    for _, d in ipairs(list) do
+        if d.partial or not (d.x and d.y) then
+            unplaced = unplaced + 1
+        else
+            local hit
+            for _, s in ipairs(spots) do
+                local dx, dy = s.x - d.x, s.y - d.y
+                if math.sqrt(dx * dx + dy * dy) <= radius then hit = s; break end
+            end
+            if not hit then
+                hit = { x = d.x, y = d.y, secs = {} }
+                spots[#spots + 1] = hit
+            end
+            hit.secs[#hit.secs + 1] = d.secs
+        end
+    end
+    for _, s in ipairs(spots) do
+        table.sort(s.secs)
+        s.n, s.lo, s.hi = #s.secs, s.secs[1], s.secs[#s.secs]
+        s.agrees = (s.hi - s.lo) <= CLUSTER_WINDOW
+        s.typical = median(s.secs, 1, s.n)
+        s.secs = nil
+    end
+    table.sort(spots, function(a, b) return a.typical > b.typical end)
+    return spots, unplaced
 end
 
 -- The first leg, measured rather than computed.
@@ -424,8 +520,12 @@ end
 -- toReleaseRaw is always the uncorrected value, because that is what the next
 -- measurement has to be scored against -- scoring a corrected estimate would
 -- drive the bias to zero and quietly remove the correction that earned it.
+--
+-- target doubles as the spot the descent is read for: inbound it is the
+-- committed drop point, and a caller watching a parachute passes where the
+-- parachute is, which is within the merge radius of where it will land.
 function Airtime.ETA(store, zoneID, fit, target, fallingSince, now, releaseStore)
-    local descent, n, _, _, _, _, source = Airtime.Descent(store, zoneID)
+    local descent, n, _, _, _, _, source = Airtime.Descent(store, zoneID, target)
 
     if fallingSince then
         local left = descent - (now - fallingSince)

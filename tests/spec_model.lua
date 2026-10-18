@@ -154,6 +154,22 @@ t.test("a crate under its parachute reports how long until it can be taken", fun
     ns.db = nil
 end)
 
+-- Dmitrii watched a row sit on "landing 0:00" with a minute of parachute left.
+-- The measured descent for that zone had simply run out, and a countdown at
+-- zero reads as a crate already down -- so the raid is told to set off for one
+-- that is still in the air.
+t.test("a parachute still up past the measured descent counts up, not down", function()
+    ns.db = { descent = {} }
+    ns.Airtime.NoteDescent(ns.db.descent, ZA, 86)
+    withLive({ phase = "falling", since = T0 - 140 }, function()
+        local rows = Model.BuildRows(db({ ZA, 1, T0 - 140 }), nil, T0)
+        t.eq(rows[1].live.phase, "falling", "the parachute is drawn, so it is falling")
+        t.eq(rows[1].live.toGround, nil, "a spent estimate is not a countdown of zero")
+        t.near(rows[1].live.fallingFor, 140, 1e-6, "how long it has been up, measured")
+    end)
+    ns.db = nil
+end)
+
 t.test("no live crate leaves the row as it was", function()
     withLive(nil, function()
         local rows = Model.BuildRows(db({ ZA, 1, T0 - 100 }), nil, T0)

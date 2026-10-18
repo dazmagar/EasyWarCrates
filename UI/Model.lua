@@ -40,8 +40,17 @@ function Model.LiveFor(zoneID, now)
                      mine = live.mine, held = held, toGone = toGone,
                      x = live.x, y = live.y }
         end
-        local eta = ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, nil, nil, live.since, now)
-        return { phase = "falling", toGround = eta and eta.toGround or nil,
+        local eta = ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, nil,
+            live.x and live.y and live or nil, live.since, now)
+        local left = eta and eta.toGround
+        -- The measured descent is spent and the parachute is still drawn, so
+        -- the figure was short for this drop. Counted up from here for the same
+        -- reason a claimed crate is: "landing 0:00" asserts a landing that has
+        -- not happened. The reading this flight files when it does land
+        -- includes the overrun, so the estimate corrects itself.
+        if not (left and left > 0) then left = nil end
+        return { phase = "falling", toGround = left,
+                 fallingFor = (not left) and live.since and (now - live.since) or nil,
                  since = live.since, rank = 2, x = live.x, y = live.y }
     end
     -- Still in the air. Worth a row of its own: a transport on its way is the
@@ -66,7 +75,7 @@ function Model.LiveFor(zoneID, now)
         -- nothing about how far away the plane is.
         local left = eta and eta.toGround
         if not left and r and r.committed and r.reason == "not-moving" then
-            left = ns.Airtime.Descent(ns.db and ns.db.descent, zoneID)
+            left = ns.Airtime.Descent(ns.db and ns.db.descent, zoneID, r.committed)
         end
         return { phase = "inbound", toGround = left, rank = 3,
                  x = aim and aim.x, y = aim and aim.y }
@@ -80,7 +89,8 @@ function Model.LiveFor(zoneID, now)
     if report then
         local phase = report.stage == "flying" and "inbound" or report.stage
         local eta = report.stage == "falling"
-            and ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, nil, nil, report.at, now)
+            and ns.Airtime.ETA(ns.db and ns.db.descent, zoneID, nil,
+                report.x and report.y and report or nil, report.at, now)
         -- A transport somebody else is watching. Only they can say how far
         -- through its flight it is, so they send the figure and this ages it
         -- rather than recomputing something it has no basis for.
@@ -134,7 +144,11 @@ function Model.StillTrue(report, now)
         return elapsed <= ns.Airtime.Flight(ns.db and ns.db.flight, report.zoneID)
     end
     if report.stage == "falling" then
-        return elapsed <= ns.Airtime.Descent(ns.db and ns.db.descent, report.zoneID)
+        -- Read at the spot it is coming down on. On the zone figure a report
+        -- from Voidstorm's 102s spot stopped being true after 44 seconds, so
+        -- the scout's sighting left the window with the crate still in the air.
+        return elapsed <= ns.Airtime.Descent(ns.db and ns.db.descent, report.zoneID,
+            report.x and report.y and report or nil)
     end
     return true
 end
