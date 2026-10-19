@@ -170,8 +170,17 @@ end
 
 local function take(report, channel)
     report.leader = report.leader or leads(report.from) or nil
-    local verdict = ns.Remote.Note(ns.remote, report, GetServerTime())
     local live = ns.Scanner and ns.Scanner.LiveCrate and ns.Scanner.LiveCrate(report.zoneID)
+    -- Refused before it is stored rather than filtered when the row is drawn.
+    -- A stored report is the freshest thing the store holds about that zone,
+    -- so it would go on being drawn from until it aged out.
+    if ns.Remote.Behind(live, report) then
+        return log({ via = report.via, from = report.from, channel = channel,
+                     text = ("%s in %s shard %s"):format(report.stage,
+                         ns.GetZoneAbbr(report.zoneID), tostring(report.shardID)),
+                     verdict = "refused: we watched this crate ourselves" })
+    end
+    local verdict = ns.Remote.Note(ns.remote, report, GetServerTime())
     local inView = ns.Remote.AlreadySeen(live, report)
     -- Tagged only when being in view is what kept it quiet. An anchor is never
     -- announced whatever is in front of the player, and labelling one "not

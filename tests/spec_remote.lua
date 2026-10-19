@@ -1005,3 +1005,51 @@ t.test("a sighting from this addon still refreshes", function()
     t.eq(Remote.Note(store, { stage = "falling", zoneID = ZA, shardID = 44, at = T0 + 30,
         from = "Scout", x = 0.46, y = 0.62, toGround = 30 }, T0 + 30), "refresh")
 end)
+
+-- Dmitrii's, 18 Oct: he watched the crate in Zul'Aman land, looted it, flew to
+-- Eversong, and the Zul'Aman row was still counting down to a landing.
+--
+-- RCT announces the claimed crate in the same words as the parachute, so that
+-- line arrived after the loot -- and with the store emptied by a reload there
+-- was no earlier line of theirs for the repeat rule to recognise it against.
+-- Personal observation has no such dependency: having watched a crate land and
+-- picked it up cannot be overruled by anybody's account of it.
+--
+-- ADVANCE is the order a crate's life runs in, and Remote.Supersede already
+-- drops a held report that this client's own eyes have overtaken. This is the
+-- other half, for a report that has not been stored yet.
+t.test("a crate this client watched being taken is not falling", function()
+    local live = { phase = "ground", mine = true, claimedAt = T0, shard = 44, x = 0.46, y = 0.62 }
+    t.ok(Remote.Behind(live, { stage = "falling", shardID = Remote.SHARD_UNKNOWN }),
+        "their line about the crate we just looted is not news")
+    t.ok(Remote.Behind(live, { stage = "flying", shardID = Remote.SHARD_UNKNOWN }),
+        "nor is a transport in a zone where the crate is already on the ground")
+end)
+
+t.test("a report further along than our own sighting is news", function()
+    local live = { phase = "falling", shard = 44 }
+    t.eq(Remote.Behind(live, { stage = "ground", shardID = 44 }), false,
+        "we see a parachute, they see it down -- theirs is the newer fact")
+    t.eq(Remote.Behind(live, { stage = "falling", shardID = 44 }), false,
+        "and the same stage still refreshes")
+end)
+
+t.test("another copy of the zone is not the crate we took", function()
+    t.eq(Remote.Behind({ phase = "ground", shard = 44 }, { stage = "falling", shardID = 77 }),
+        false, "77 is a zone we have not stood in")
+end)
+
+-- An anchor says a crate existed and dates the cycle. It is the one thing
+-- worth having from a zone whose crate has just been taken, so the rule has to
+-- leave it alone -- which RANK already decides, because an anchor draws no row.
+t.test("an anchor is about the cycle, not about this crate", function()
+    local live = { phase = "ground", shard = 44 }
+    t.eq(Remote.Behind(live, { stage = "anchor", shardID = 44 }), false)
+    t.eq(Remote.Behind(live, { stage = "here", shardID = 44 }), false)
+end)
+
+t.test("nothing seen here means there is nothing to outrank", function()
+    t.eq(Remote.Behind(nil, { stage = "falling", shardID = 44 }), false)
+    t.eq(Remote.Behind({ phase = "inbound", shard = 44 }, { stage = "falling", shardID = 44 }),
+        false, "inbound is the window's word for a transport, not a stage of a crate")
+end)

@@ -759,6 +759,37 @@ function Remote.AlreadySeen(live, report)
     return live.shard == report.shardID
 end
 
+-- Our own eyes against somebody else's account of the same crate.
+--
+-- true when the report would move the crate backwards through its life from
+-- where this client can see it already is: a parachute over a zone where the
+-- crate is on the ground, or a transport over one that has been looted.
+--
+-- Dmitrii's, 18 Oct: he took the crate in Zul'Aman and the row went on
+-- counting down to its landing while he flew to Eversong. RCT announces the
+-- claimed crate in the same words as the parachute, so that line arrives after
+-- the loot, and a reload had emptied the store -- leaving no earlier line of
+-- theirs for the repeat rule to recognise it against. Having watched a crate
+-- land and picked it up does not depend on what else was heard.
+--
+-- Only the stages that draw a row. An anchor is the opposite case: it dates
+-- the cycle rather than describing this crate, and a zone whose crate has just
+-- been taken is exactly where one is worth having.
+function Remote.Behind(live, report)
+    if type(live) ~= "table" or type(report) ~= "table" then return false end
+    if not RANK[report.stage] then return false end
+    local seen, said = ADVANCE[live.phase], ADVANCE[report.stage]
+    if not seen or not said or said <= seen then return false end
+    -- A numbered shard that is not ours is another copy of the zone, and so
+    -- another crate. One that names none -- their two map-pin lines -- comes
+    -- from the leader of this group, so it is about the copy we are in.
+    if live.shard ~= nil and type(report.shardID) == "number"
+        and live.shard ~= report.shardID then
+        return false
+    end
+    return true
+end
+
 function Remote.Supersede(store, zoneID, shardID, stage)
     local shards = store and store[zoneID]
     local entry = shards and shards[shardID]
