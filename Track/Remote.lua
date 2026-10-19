@@ -792,13 +792,30 @@ end
 
 function Remote.Supersede(store, zoneID, shardID, stage)
     local shards = store and store[zoneID]
-    local entry = shards and shards[shardID]
-    if not entry then return false end
-    if (ADVANCE[stage] or 99) > (ADVANCE[entry.stage] or 99) then return false end
+    if not shards then return false end
+    local said = ADVANCE[stage] or 99
 
-    shards[shardID] = nil
+    local function drop(key)
+        local entry = key ~= nil and shards[key] or nil
+        if not entry or said > (ADVANCE[entry.stage] or 99) then return false end
+        shards[key] = nil
+        return true
+    end
+
+    -- The copy of the zone this client is standing in, and the entry that
+    -- named no copy at all -- their two map-pin lines carry no shard, so one
+    -- sits under SHARD_UNKNOWN where a lookup by shard number cannot reach it.
+    --
+    -- Dmitrii's Zul'Aman crate, 18 Oct: their line landed 54 seconds into an
+    -- 87-second fall, because their parachute vignette is drawn by proximity
+    -- and they were far away. A fall is dated from when it is heard, so the row
+    -- counted down 52 seconds past the landing -- and this, the one thing that
+    -- was supposed to cut it short the moment we saw the crate on the ground,
+    -- was looking under 26055 for an entry filed under "?".
+    local gone = drop(shardID)
+    gone = drop(SHARD_UNKNOWN) or gone
     if not next(shards) then store[zoneID] = nil end
-    return true
+    return gone
 end
 
 -- Which copy of a zone the raid is in, as somebody standing there reports it.

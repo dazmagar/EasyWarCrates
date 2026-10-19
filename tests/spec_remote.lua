@@ -1053,3 +1053,51 @@ t.test("nothing seen here means there is nothing to outrank", function()
     t.eq(Remote.Behind({ phase = "inbound", shard = 44 }, { stage = "falling", shardID = 44 }),
         false, "inbound is the window's word for a transport, not a stage of a crate")
 end)
+
+-- Seeing the crate for yourself is supposed to end everybody's account of it,
+-- and for a report that named no shard it did not.
+--
+-- Dmitrii's Zul'Aman crate, 18 Oct: their map-pin line arrived at 20:27:19,
+-- 54 seconds into an 87-second fall, because their parachute vignette is drawn
+-- by proximity and they were far away. We dated the fall from the moment we
+-- heard it, so the row counted down to 20:28:44. Our own eyes had the crate on
+-- the ground at 20:27:52 and claimed at 20:28:02, and Supersede could not
+-- reach their entry: it looks one up by shard number, and theirs is filed under
+-- SHARD_UNKNOWN because their two lines carry no shard.
+t.test("seeing the crate supersedes a report that named no shard", function()
+    local store = Remote.New()
+    Remote.Note(store, Remote.FromPin(DROPPED .. pin(ZA, 4020, 7830), "Rdy", T0), T0)
+    t.ok(Remote.For(store, ZA, T0 + 10), "held while nobody has seen it land")
+    t.ok(Remote.Supersede(store, ZA, 26055, "ground"),
+        "and this client is standing in a numbered copy of that zone")
+    t.eq(Remote.For(store, ZA, T0 + 10), nil, "their account of the fall is over")
+end)
+
+t.test("superseding leaves another copy of the zone alone", function()
+    local store = Remote.New()
+    Remote.Note(store, { stage = "falling", zoneID = ZA, shardID = 77, at = T0,
+        from = "Scout" }, T0)
+    t.eq(Remote.Supersede(store, ZA, 26055, "ground"), false)
+    t.ok(Remote.For(store, ZA, T0 + 10), "77 is not the copy we are standing in")
+end)
+
+-- Both at once, because a zone can hold one of each and the crate on the
+-- ground in front of the player is the same crate as the shardless report.
+t.test("the numbered copy and the shardless one go together", function()
+    local store = Remote.New()
+    Remote.Note(store, Remote.FromPin(DROPPED .. pin(ZA, 4020, 7830), "Rdy", T0), T0)
+    Remote.Note(store, { stage = "falling", zoneID = ZA, shardID = 26055, at = T0,
+        from = "Scout" }, T0)
+    t.ok(Remote.Supersede(store, ZA, 26055, "ground"))
+    t.eq(Remote.For(store, ZA, T0 + 10), nil)
+end)
+
+-- A report further along than what this client has seen outlives the sighting:
+-- we have found the crate falling, they say it is already down.
+t.test("a shardless report ahead of our own sighting survives", function()
+    local store = Remote.New()
+    Remote.Note(store, { stage = "ground", zoneID = ZA, shardID = Remote.SHARD_UNKNOWN,
+        at = T0, from = "Rdy", via = "RCT" }, T0)
+    t.eq(Remote.Supersede(store, ZA, 26055, "falling"), false)
+    t.ok(Remote.For(store, ZA, T0 + 10), "theirs is the newer stage, not the stale one")
+end)
