@@ -607,10 +607,21 @@ HANDLERS.yells = function()
     for name, held in pairs(ns.db.unknownSpeakers or {}) do
         strangers[#strangers + 1] = { name = name, held = held }
     end
-    if #strangers == 0 then return end
+    local heard = (ns.Scanner.StrangersHeard and ns.Scanner.StrangersHeard()) or 0
+    if #strangers == 0 then
+        -- Never silent. "Nobody has spoken" and "nobody spoke when a cycle
+        -- started" are the two answers this command exists to separate, and
+        -- printing nothing is the first of them.
+        if heard > 0 then
+            ns.Print(("|cff777777%d line%s from other NPCs heard in crate zones this"
+                .. " session, none within %ds of a cycle starting.|r"):format(
+                heard, heard == 1 and "" or "s", ns.Scanner.ANNOUNCER_LEAD))
+        end
+        return
+    end
     table.sort(strangers, function(a, b) return a.held.n > b.held.n end)
 
-    ns.Print(("|cffff8800%d other NPC%s spoken in a crate zone and %s not known"
+    ns.Print(("|cffff8800%d NPC%s spoken as a cycle started here and %s not known"
         .. " announcers:|r"):format(#strangers, #strangers == 1 and " has" or "s have",
         #strangers == 1 and "is" or "are"))
     if #strangers >= ns.Scanner.UNKNOWN_SPEAKERS then
@@ -619,9 +630,20 @@ HANDLERS.yells = function()
     end
     for i = 1, math.min(#strangers, 6) do
         local e = strangers[i]
-        ns.Print(("   %s |cff777777x%d in %s|r"):format(
-            e.name, e.held.n, ns.GetZoneName(e.held.zoneID)))
+        -- Where in the cycle they spoke, because that is what separates an
+        -- announcer from an NPC who happened to be talking: the real one is at
+        -- the same point of every cycle.
+        local lead = tonumber(e.held.lead) or 0
+        ns.Print(("   %s |cff777777x%d in %s, %s|r"):format(
+            e.name, e.held.n, ns.GetZoneName(e.held.zoneID),
+            lead <= 0 and ("%ds before it started"):format(-lead)
+                or ("%ds into it"):format(lead)))
         ns.Print(("      |cff777777%s|r"):format(tostring(e.held.text)))
+    end
+    if heard > #strangers then
+        ns.Print(("|cff777777%d line%s heard in crate zones this session in all --"
+            .. " the rest came nowhere near a cycle.|r"):format(
+            heard, heard == 1 and "" or "s"))
     end
     ns.Print("|cff777777if a crate cycle started when one of those spoke, this addon cannot"
         .. " see it on your locale -- that line is what it needs.|r")

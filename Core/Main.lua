@@ -75,7 +75,22 @@ local LOG_MAX = 400
 local function remember(line)
     local log = ns.db and ns.db.log
     if not log then return end
-    log[#log + 1] = { at = GetServerTime(), text = line }
+    local now = GetServerTime()
+    -- A line that repeats is counted on the entry it repeats rather than
+    -- written again. Dmitrii's log on 18 Oct reached forty minutes back and no
+    -- further: one crate lying on the ground writes "duplicate (timer left
+    -- alone)" every two seconds, about thirty lines a crate, and a 400-line
+    -- ring made of those cannot explain anything that happened an hour ago.
+    --
+    -- at stays the first time it was said and last moves, which is the way
+    -- round BugGrabber's own store gets wrong: its time is the most recent
+    -- occurrence, so an entry's age says nothing about when it started.
+    local prev = log[#log]
+    if prev and prev.text == line then
+        prev.n, prev.last = (prev.n or 1) + 1, now
+        return
+    end
+    log[#log + 1] = { at = now, text = line }
     while #log > LOG_MAX do table.remove(log, 1) end
 end
 
@@ -607,6 +622,11 @@ frame:SetScript("OnEvent", function(_, event, name)
     ns.Phase.Absorb(ns.db.phase, ns.db.crates)
     ns.Phase.Forget(ns.db.phase, now)
     local dropped = ns.Timers.Prune(ns.db.crates, ns.GetZoneInterval, now)
+    -- Collected under a rule that kept every NPC who spoke, which is not what
+    -- that store is for. See Scanner.ForgetUnjudgedSpeakers.
+    if ns.Scanner and ns.Scanner.ForgetUnjudgedSpeakers then
+        ns.Scanner.ForgetUnjudgedSpeakers(ns.db.unknownSpeakers)
+    end
     ns.Print("v" .. ns.Version() .. " loaded. |cffffffff/ewc|r for commands."
         .. (dropped > 0 and (" |cff777777(%d stale timer%s cleared)|r"):format(
             dropped, dropped == 1 and "" or "s") or ""))

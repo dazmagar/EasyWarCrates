@@ -389,10 +389,78 @@ local UNKNOWN_SPEAKERS = 40
 Scanner.STRANGER_IDS = STRANGER_IDS
 Scanner.UNKNOWN_SPEAKERS = UNKNOWN_SPEAKERS
 
+-- Speakers waiting to find out whether a crate followed them. Session only:
+-- the whole point of the list is the next few minutes, and a name nothing came
+-- of is not worth a line on disk.
+local pendingSpeakers = {}
+local strangersHeard = 0
+
+-- How far from a cycle's start a line can be and still be the announcement.
+--
+-- The yell IS the anchor for an announcer this client knows -- Timers.Record
+-- takes the moment of the yell as the cycle's start -- so a candidate's line
+-- has to sit near one. Generous, because the anchor for a crate found on the
+-- ground is itself computed backwards from two measured legs.
+local ANNOUNCER_LEAD = 120
+Scanner.ANNOUNCER_LEAD = ANNOUNCER_LEAD
+
 local function countKeys(t)
     local n = 0
     for _ in pairs(t or {}) do n = n + 1 end
     return n
+end
+
+-- A cycle has been placed in this zone, so whoever spoke at the start of it is
+-- a candidate for announcing it and everybody else can be forgotten.
+--
+-- The store this feeds exists to find the announcer's name on a client whose
+-- locale nobody has written down. Fed from every line heard in a crate zone it
+-- filled with quest givers instead: 40 of 40 on 18 Oct, Arator 80 times,
+-- Zul'jarra 64, Riftblade Maella 64, not one of them announcing anything. And
+-- full means the name this is actually for is dropped when it finally speaks.
+--
+-- lead is what tells the two apart over a few cycles: an announcer speaks at
+-- the same point of every one, an NPC who happened to be talking does not.
+function Scanner.PromoteSpeakers(zoneID, anchorAt)
+    local waiting = zoneID and pendingSpeakers[zoneID]
+    local seen = ns.db and ns.db.unknownSpeakers
+    anchorAt = tonumber(anchorAt)
+    if not waiting or not seen or not anchorAt then return 0 end
+    local kept = 0
+    for name, said in pairs(waiting) do
+        if math.abs(said.at - anchorAt) <= ANNOUNCER_LEAD then
+            local held = seen[name]
+            if held or countKeys(seen) < UNKNOWN_SPEAKERS then
+                held = held or { n = 0, first = said.at }
+                held.n = held.n + 1
+                held.last, held.zoneID, held.text = said.at, zoneID, said.text
+                held.lead = math.floor(said.at - anchorAt + 0.5)
+                seen[name], kept = held, kept + 1
+            end
+        end
+        waiting[name] = nil
+    end
+    return kept
+end
+
+-- How many lines from NPCs this client does not know as announcers have been
+-- heard in a crate zone this session, whatever became of them. Without it
+-- /ewc yells cannot tell "nobody has spoken" from "nobody spoke near a cycle",
+-- and those are the two answers it exists to separate.
+function Scanner.StrangersHeard() return strangersHeard end
+
+-- Records left by the rule that kept every speaker. They carry no lead,
+-- because nothing judged them against a cycle, and the store is capped -- so
+-- leaving them means the real name can never get in.
+function Scanner.ForgetUnjudgedSpeakers(seen)
+    if type(seen) ~= "table" then return 0 end
+    local dropped = 0
+    for name, held in pairs(seen) do
+        if type(held) ~= "table" or held.lead == nil then
+            seen[name], dropped = nil, dropped + 1
+        end
+    end
+    return dropped
 end
 
 -- Long enough that a vignette drawn continuously counts once, short enough that
@@ -1147,6 +1215,7 @@ function Scanner.OnVignettesUpdated()
 
                         local verdict, _, gap =
                             ns.Timers.Record(db.crates, zoneID, shard, anchorAt, source)
+                        Scanner.PromoteSpeakers(zoneID, anchorAt)
                         if gap then
                             local noted = ns.Timers.NoteGap(db.gaps, zoneID, gap,
                                 ns.GetZoneInterval(zoneID))
@@ -1262,14 +1331,12 @@ function Scanner.OnAnnouncement(text, npcName, guid)
     -- speaker is counted on the way past. Only inside a tracked crate zone,
     -- and only their name, which bounds it to something readable.
     if not ns.IsAnnouncer(npcName) then
-        local seen = zoneID and ns.db and ns.db.unknownSpeakers
-        if seen and type(npcName) == "string" and npcName ~= "" then
-            local held = seen[npcName]
-            if held or countKeys(seen) < UNKNOWN_SPEAKERS then
-                held = held or { n = 0, first = stampClock() }
-                held.n, held.last, held.zoneID = held.n + 1, stampClock(), zoneID
-                held.text = tostring(text):sub(1, 120)
-                seen[npcName] = held
+        if zoneID and type(npcName) == "string" and npcName ~= "" then
+            strangersHeard = strangersHeard + 1
+            local waiting = pendingSpeakers[zoneID] or {}
+            pendingSpeakers[zoneID] = waiting
+            if waiting[npcName] or countKeys(waiting) < UNKNOWN_SPEAKERS then
+                waiting[npcName] = { at = stampClock(), text = tostring(text):sub(1, 120) }
             end
         end
         return
