@@ -76,11 +76,10 @@ local function remember(line)
     local log = ns.db and ns.db.log
     if not log then return end
     local now = GetServerTime()
-    -- A line that repeats is counted on the entry it repeats rather than
-    -- written again. Dmitrii's log on 18 Oct reached forty minutes back and no
-    -- further: one crate lying on the ground writes "duplicate (timer left
-    -- alone)" every two seconds, about thirty lines a crate, and a 400-line
-    -- ring made of those cannot explain anything that happened an hour ago.
+    -- A line said twice running is counted on the entry it repeats. Only the
+    -- newest entry is compared: the same line after a different one is an
+    -- event, and the one that matters most is a map pin coming back to a zone
+    -- another zone had taken.
     --
     -- at stays the first time it was said and last moves, which is the way
     -- round BugGrabber's own store gets wrong: its time is the most recent
@@ -231,19 +230,31 @@ local function pinCrate(zoneID, x, y, always)
     return ns.SetCratePin(zoneID, x, y, said)
 end
 
+-- What the log last said about a crate, per zone. A crate lying on the ground
+-- is sighted every two seconds and the fortieth "timer left alone" says what
+-- the first one said: 221 of the 420 lines his log held on 18 Oct, which is
+-- why it reached an hour back and no further. A change of shard, stage or
+-- verdict is still news, and so is the next crate.
+local toldAbout = {}
+
 -- Every sighting of a crate's own vignette. This is the truth the prediction
 -- was only guessing at, so it scores the guess, files the landing spot, and
 -- reports the timer -- but only the last of those depends on the timer having
 -- actually moved. verdict is what Timers made of it.
 function ns.OnCrateSighted(zoneID, shardID, stage, pos, verdict, backdated)
     if verdict == "new" or verdict == "refined" then
+        toldAbout[zoneID] = nil
         ns.Say(string.format("%s |cffffffffshard %s|r -- crate %s at |cffffd100%.1f, %.1f|r%s",
             ns.GetZoneName(zoneID), tostring(shardID), stage, pos.x * 100, pos.y * 100,
             backdated and (" |cff777777(found lying there; timer set back %ds to the spawn)|r")
                 :format(math.floor(backdated + 0.5)) or ""))
     else
-        ns.Debug(("crate %s in %s shard %s -> %s (timer left alone)"):format(
-            stage, ns.GetZoneName(zoneID), tostring(shardID), verdict))
+        local news = ("%s/%s/%s"):format(tostring(shardID), stage, verdict)
+        if toldAbout[zoneID] ~= news then
+            toldAbout[zoneID] = news
+            ns.Debug(("crate %s in %s shard %s -> %s (timer left alone)"):format(
+                stage, ns.GetZoneName(zoneID), tostring(shardID), verdict))
+        end
     end
 
     -- Guarded, and the guard is the point. Everything below this line is the
